@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+<!--
+{{LICENSE}}
+-->
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>FCC Crystallography Explorer</title>
+    <style>
+      {{CSS}}
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <svg width="35" height="40" viewBox="0 0 40 44" aria-hidden="true">
+          <path
+            d="M20 2 37 12v20L20 42 3 32V12Z M20 2v20M3 12l17 10 17-10M20 22v20"
+            fill="none"
+            stroke="#a7cac7"
+            stroke-width="1.5"
+          />
+          <g fill="#efbd78">
+            <circle cx="20" cy="2" r="3" />
+            <circle cx="3" cy="12" r="3" />
+            <circle cx="37" cy="12" r="3" />
+            <circle cx="20" cy="22" r="3" />
+          </g>
+        </svg>
+        <div>
+          FCC <b>EXPLORER</b><small>CRYSTALLOGRAPHY, MADE VISIBLE</small>
+        </div>
+      </div>
+      <div class="search-wrap">
+        <input
+          id="search"
+          placeholder="Find a concept… stacking, (111), slip"
+          aria-label="Search concepts"
+        />
+        <div id="search-results" hidden></div>
+      </div>
+      <div class="actions">
+        <button id="tour">Guided tour</button
+        ><button id="save">Save view</button><button id="load">Load</button>
+        <details id="exports">
+          <summary>Export ↗</summary>
+          <div>
+            <button data-export="png">PNG · current view</button
+            ><button data-export="svg">SVG · surface net</button
+            ><button data-export="report">Calculation report</button
+            ><small>Ideal bulk FCC supercell</small
+            ><button data-export="xyz">XYZ · unique atoms</button
+            ><button data-export="cif">CIF · unique atoms</button
+            ><button data-export="poscar">POSCAR · unique atoms</button>
+          </div>
+        </details>
+        <button id="reset" title="Reset app">↺</button>
+      </div>
+      <input id="load-file" type="file" accept=".json" hidden />
+    </header>
+    <div class="shell">
+      <aside class="left">
+        <div class="eyebrow nav-title">EXPLORE THE CRYSTAL</div>
+        <nav id="topics"></nav>
+        <div id="controls"></div>
+        <div id="lessons"></div>
+        <div class="offline">● &nbsp; Offline ready · open source</div>
+      </aside>
+      <main>
+        <div class="heading">
+          <div>
+            <span id="eyebrow" class="eyebrow"></span>
+            <h1 id="question"></h1>
+          </div>
+          <button id="wide" title="Wide viewer">⤢</button>
+        </div>
+        <nav id="workspaces">
+          <button data-space="crystal">Crystal <small>3D</small></button
+          ><button data-space="surface">Surface net <small>2D</small></button
+          ><button data-space="stacking">Stacking <small>3D</small></button
+          ><button data-space="reciprocal">Reciprocal <small>3D</small></button>
+        </nav>
+        <div class="toolbar">
+          <span>LOOK ALONG</span><button data-look="1 0 0">[100]</button
+          ><button data-look="0 1 0">[010]</button
+          ><button data-look="0 0 1">[001]</button
+          ><button data-look="1 1 0">[110]</button
+          ><button data-look="1 0 1">[101]</button
+          ><button data-look="0 1 1">[011]</button
+          ><button data-look="1 1 1">[111]</button
+          ><button id="look-normal">Plane normal</button
+          ><button id="look-dir">Direction</button
+          ><button id="fit">Fit view</button>
+        </div>
+        <section class="stage">
+          <div id="viewer"></div>
+          <div id="surface" hidden></div>
+          <div id="view-error" hidden></div>
+          <div id="message" hidden></div>
+          <div id="legend"></div>
+          <div id="hint">
+            Drag to rotate · Scroll to zoom · Right-drag to pan · Click a site
+          </div>
+        </section>
+        <div id="stats"></div>
+        <div id="inspector"></div>
+        <div id="sequence" hidden></div>
+      </main>
+      <aside class="right">
+        <nav id="tabs">
+          <button data-tab="learn">Learn</button
+          ><button data-tab="calculate">Calculate</button
+          ><button data-tab="verify">Verify</button
+          ><button data-tab="layers">Layers</button>
+        </nav>
+        <div id="content"></div>
+      </aside>
+    </div>
+    <div id="toast" role="status" hidden></div>
+    <noscript
+      >This offline application requires JavaScript; 3D rendering needs
+      WebGL2.</noscript
+    >
+    <script>
+      {{JS}}
+    </script>
+  </body>
+</html>

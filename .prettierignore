@@ -1,0 +1,3 @@
+# The page template's whitespace is reproduced exactly in the built HTML.
+src/index.html
+dist/

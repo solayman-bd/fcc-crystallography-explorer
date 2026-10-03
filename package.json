@@ -1,0 +1,24 @@
+{
+  "name": "fcc-crystallography-explorer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive 3D lab for ideal FCC crystallography: unit cells, Miller planes, surfaces, stacking, neighbors, slip and diffraction.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test",
+    "test:browser": "node tests/browser/smoke.mjs",
+    "format": "prettier --write src tests build.mjs",
+    "notebook": "python make_notebook.py dist/FCC-Explorer.html dist/FCC-Explorer-Colab.ipynb",
+    "serve": "python serve.py dist/FCC-Explorer.html"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10",
+    "playwright": "1.51.1",
+    "prettier": "3.6.2"
+  }
+}

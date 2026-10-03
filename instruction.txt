@@ -1,0 +1,26 @@
+How I run FCC Explorer
+
+The app is a single file. I don't install anything to run it.
+
+Run it locally:
+I double-click FCC-Explorer.html. It opens in my browser and works offline.
+The 3D views need WebGL2, so I use a recent Chrome, Edge, Firefox or Safari.
+
+Run it in Google Colab:
+1. I open colab.research.google.com.
+2. File → Upload notebook, and I choose FCC-Explorer-Colab.ipynb.
+3. Runtime → Run all.
+A CPU runtime is enough. No GPU, API key or extra package is needed.
+
+Rebuild it from source (only when I change the code):
+I need Node.js 20+ (and Python 3 for the notebook). In this folder:
+1. npm install
+2. npm run build       -> dist/FCC-Explorer.html
+3. npm test            -> unit tests
+4. npm run notebook    -> dist/FCC-Explorer-Colab.ipynb
+Then I copy the two files from dist/ over the ones in this folder.
+
+The other files are background reading. I don't need them to run the app:
+- FCC-Requirements-Analysis.md: my design decisions and the math behind the app.
+- FCC-Build-Specification.md: the specification I built the app against.
+- Crystal planes in cubic cells how to see and slice them.pdf: my notes on slicing and viewing crystal planes.

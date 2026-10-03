@@ -14,6 +14,7 @@ import {
 import { angleBetween, dot, scale, tripleProduct } from "./math.js";
 import { isAllowedReflection, reciprocalBasis } from "./reciprocal.js";
 import { slipSystems } from "./slip.js";
+import { STRUCTURES } from "./structures.js";
 import { surfaceCell } from "./surfaces.js";
 
 /**
@@ -89,12 +90,28 @@ export function runChecks(a = 4.05, hkl = [1, 1, 1], load = [1, -1, 0]) {
 
   // Layers of the current plane (Cell ⇄ Net animation).
   const layers = layerGeometry(hkl, a);
+  const ballsInCell = (geometry) =>
+    stackPlan(geometry, 0).points.filter((point) => point.inCell).length;
   check("Stacking period N × d = normal repeat", layers.period * layers.d, layers.repeat);
   check("Layer density d × 4/a³ = 1 / area", layers.d * 4, layers.density);
+  check("Stacked layers fill one cube with 14 balls", ballsInCell(layers), 14);
+  // The same plane in the other structures of the animation.
   check(
-    "Stacked layers fill one cube with 14 balls",
-    stackPlan(layers, 0).points.filter((point) => point.inCube).length,
-    14,
+    "SC: stacked layers fill one cube with 8 balls",
+    ballsInCell(layerGeometry(hkl, a, "sc")),
+    8,
+  );
+  check(
+    "BCC: stacked layers fill one cube with 9 balls",
+    ballsInCell(layerGeometry(hkl, a, "bcc")),
+    9,
+  );
+  const hcp = layerGeometry(hkl, a, "hcp");
+  check("HCP: stacked layers fill one prism with 17 balls", ballsInCell(hcp), 17);
+  check(
+    "HCP: area × lattice-layer step = (√3/2)a²c",
+    ((hcp.area * hcp.step) / hcp.gNorm) * a ** 3,
+    STRUCTURES.hcp.primitiveVolume * a ** 3,
   );
   return checks;
 }

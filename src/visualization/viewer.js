@@ -41,6 +41,7 @@ import {
   wignerSeitzVertices,
 } from "../crystal/environment.js";
 import { PRIMITIVE_VECTORS, latticeSites, primitiveCellCorners } from "../crystal/lattice.js";
+import { layerForState, layerGeometry } from "../crystal/layers.js";
 import {
   add,
   cubicFamily,
@@ -58,7 +59,6 @@ import {
   extendedPlaneQuad,
   planeBoxPolygon,
   planeLevel,
-  planeInfo,
   planeLevelsInBox,
 } from "../crystal/planes.js";
 import { isAllowedReflection, reciprocalPoints } from "../crystal/reciprocal.js";
@@ -446,12 +446,10 @@ export class CrystalViewer {
    * It is rebuilt (and restarted) only when the plane, layer, mode or appearance changes.
    */
   animationScene(state, cameraChanged = false) {
-    const step = planeInfo(state.hkl).step;
-    const layer = Math.round(
-      planeLevel(state.hkl, state.N, state.location, state.c, state.layer) / step,
-    );
+    const layer = layerForState(layerGeometry(state.hkl, 1, state.animStructure), state);
     const key = JSON.stringify([
       state.animMode,
+      state.animStructure,
       state.hkl.map((value) => value / gcdOf(state.hkl)),
       layer,
       state.a,

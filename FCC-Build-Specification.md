@@ -73,6 +73,30 @@ Each step is a set of numbers (opacities, offsets along n, morph and growth amou
 
 My acceptance checks: d, the primitive net, the area per atom and N for (001), (110), (111), (112) and (210); area per atom = 1/(planar density) and d × 4/a³ = planar density; exactly 14 balls in the cube in Build mode for every (hkl); (1 −1 0) = (110) and (002) → (001); and the existing tabs, exports, Save/Load and the tour still work.
 
+## Later addition: simple cubic, BCC and HCP, and primitive ⇄ 2D
+
+I extended the animations from FCC to four structures, chosen in the player and in the panel's Animate section (state key `animStructure`, default FCC, so older saved views still load):
+
+| Structure | Lattice + basis | Conventional cell | Primitive cell |
+|---|---|---|---|
+| Simple cubic | a[100], a[010], a[001]; 1 atom | cube, 8 balls, 1 atom | the cube, a³ |
+| BCC | a/2[−111], a/2[1−11], a/2[11−1]; 1 atom | cube, 9 balls, 2 atoms | rhombohedron, 109.47°, a³/2 |
+| FCC | a/2[011], a/2[101], a/2[110]; 1 atom | cube, 14 balls, 4 atoms | rhombohedron, 60°, a³/4 |
+| HCP | a₁, a₂ (120°), c = √(8/3)a; A at 0, B at (⅓, ⅔, ½) | hexagonal prism, 17 balls, 6 atoms | rhombic prism a₁, a₂, c, 2 atoms, (√3/2)a²c |
+
+HCP planes use the axes a₁, a₂, c. The field accepts (h k l) or (h k i l) with i = −(h + k) and rejects any other i. Switching to HCP starts from (0001) unless the plane is already one of the HCP picks (0001), (10−10), (11−20), (10−11), (10−12), and a message says so.
+
+The layer engine works for any lattice + basis: normal G = h b₁ + k b₂ + l b₃, lattice layers Δs = gcd(q)/D apart, and basis atoms either sharing those layers or forming their own in between. That gives alternating gaps (HCP prism planes) and layers with 2 atoms per net cell (HCP (11−20)). Registry letters come from in-plane positions, and the period is N = M·k. FCC goes through the same code and gives the same results as before.
+
+Two new modes walk the full path:
+
+4. **Primitive → 3D → 2D**: the primitive cell with a₁, a₂, a₃ (a₁, a₂, c) and its atoms → the conventional cell → a 3D array of cells (3 × 3 × 3 cubes, or 7 hexagonal prisms × 3 stories) → the array sliced by (hkl), colored by registry → the layers pulled apart along the normal (seen along the lattice rows t₁) → one layer face-on → the layer grown into the infinite net with t₁, t₂.
+5. **2D → 3D → primitive**: the same path backwards, ending with auto-rotation on the primitive cell.
+
+The camera fits each step of these modes to the atoms it shows. SC and BCC cells are seen from further off the body diagonal than FCC, because BCC atoms line up along ⟨111⟩. For FCC, the hand-off to the Surface net view stays; the Surface net, Crystal, Stacking and Reciprocal workspaces stay FCC.
+
+My acceptance checks: SC, BCC and HCP tables (d, net lengths and angle, N, net type) for their low-index planes; HCP (0001) ABAB with d = c/2, (10−10) gaps a√3/6 and a√3/3 with ABCD, (11−20) 2 atoms per cell. For every structure and every index triple within ±3: area × lattice-layer step = primitive volume, N·d̄ = the shortest lattice vector along G, the selected layer holds balls of its cell, and the stack fills one cell with exactly 8, 9, 14 or 17 balls. The 3D arrays hold 64, 91, 172 and 187 atoms, and the primitive cells 8, 8, 8 and 9 balls. FCC results are identical to the FCC-only engine on 734 planes. The browser smoke test runs all five modes for all four structures on four planes, and the tour has a lesson for every mode and for BCC and HCP.
+
 ## Output rules
 
 - PNG exports the current view. SVG exports the analytic surface net.

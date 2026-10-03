@@ -5,11 +5,13 @@
 
 import { neighborShells } from "./crystal/environment.js";
 import {
+  cellAround,
   classifyCut,
-  cubeAround,
+  layerForState,
   layerGeometry,
-  layerLetter,
+  layerS,
   millerLabel,
+  stackingLetters,
 } from "./crystal/layers.js";
 import {
   directionInfo,
@@ -24,6 +26,7 @@ import {
   dot,
   formatNumber,
   formatVector,
+  gcdOf,
   mod,
   norm,
   parseIndices,
@@ -35,6 +38,7 @@ import { planeInfo, planeLevel } from "./crystal/planes.js";
 import { braggTable, reflectionInfo } from "./crystal/reciprocal.js";
 import { SHOCKLEY_EXAMPLE, slipSystems } from "./crystal/slip.js";
 import { STACKINGS, buildStack } from "./crystal/stacking.js";
+import { STRUCTURES, STRUCTURE_KEYS, fromMillerBravais } from "./crystal/structures.js";
 import { surfaceCell } from "./crystal/surfaces.js";
 import { runChecks } from "./crystal/verify.js";
 import {
@@ -83,10 +87,27 @@ function stopAnimation() {
   animationTimer = null;
 }
 
+/** The structure the panels describe: the animation's in the Cell ⇄ Net workspace, else FCC. */
+const structureKey = (s = state) => (s.workspace === "animation" ? s.animStructure : "fcc");
+
+/** Layers of the current plane in that structure. */
+const planeLayers = (s = state) => layerGeometry(s.hkl, s.a, structureKey(s));
+
 /** The occupied layer the surface net and the animation actually show (nearest to the plane). */
 function currentLayer(s = state) {
-  return Math.round(planeLevel(s.hkl, s.N, s.location, s.c, s.layer) / planeInfo(s.hkl).step);
+  return layerForState(planeLayers(s), s);
 }
+
+/** Layer spacing for text: d, or the alternating gaps when basis atoms form layers of their own. */
+const spacingText = (layers, a) =>
+  layers.evenlySpaced
+    ? `${fmt(layers.d * a)} Å`
+    : `${layers.gaps.map((gap) => fmt(gap * a)).join(" / ")} Å, alternating`;
+
+/** Net type for text, with the atoms per cell when a layer holds more than one per net cell. */
+const netText = (layers) =>
+  layers.type.replace("-", " ") +
+  (layers.atomsPerCell > 1 ? `, ${layers.atomsPerCell} atoms per cell` : "");
 
 /** The heading question; the surface and animation questions follow the current plane. */
 function headerQuestion() {
@@ -96,11 +117,15 @@ function headerQuestion() {
   }
 
   if (concept === "cellnet") {
-    const plane = millerLabel(layerGeometry(state.hkl).hkl);
+    const layers = planeLayers();
+    const { short, cellName } = layers.structure;
+    const plane = layers.label;
     return {
-      deconstruct: `How does one cube become the (${plane}) net?`,
-      build: `How do (${plane}) layers stack into the cube?`,
+      deconstruct: `How does one ${short} ${cellName} become the (${plane}) net?`,
+      build: `How do (${plane}) layers stack into the ${short} ${cellName}?`,
       primitive: "How small can a cell be, in 2D and in 3D?",
+      primToNet: `How does one ${short} primitive cell grow into a crystal and a (${plane}) layer?`,
+      netToPrim: `How does a (${plane}) layer stack back down to one ${short} primitive cell?`,
     }[state.animMode];
   }
 
@@ -117,7 +142,7 @@ function renderPlayer() {
   }
 
   $("#player").innerHTML =
-    `<div class="player-row"><select data-key="animMode" aria-label="Animation mode">${ANIMATION_MODES.map(([key, title]) => `<option value="${key}" ${state.animMode === key ? "selected" : ""}>${title}</option>`).join("")}</select><span id="anim-step"></span><label class="speed">Speed <select data-key="animSpeed" aria-label="Animation speed">${[0.5, 1, 2].map((speed) => `<option value="${speed}" ${state.animSpeed === speed ? "selected" : ""}>${speed}×</option>`).join("")}</select></label></div>` +
+    `<div class="player-row"><select data-key="animStructure" aria-label="Crystal structure">${STRUCTURE_KEYS.map((key) => `<option value="${key}" ${state.animStructure === key ? "selected" : ""}>${STRUCTURES[key].short}</option>`).join("")}</select><select data-key="animMode" aria-label="Animation mode">${ANIMATION_MODES.map(([key, title]) => `<option value="${key}" ${state.animMode === key ? "selected" : ""}>${title}</option>`).join("")}</select><span id="anim-step"></span><label class="speed">Speed <select data-key="animSpeed" aria-label="Animation speed">${[0.5, 1, 2].map((speed) => `<option value="${speed}" ${state.animSpeed === speed ? "selected" : ""}>${speed}×</option>`).join("")}</select></label></div>` +
     '<p id="anim-caption" aria-live="polite"></p>' +
     `<div class="player-row"><button data-anim="back" title="Previous step (←)">← Back</button><button data-anim="play" class="primary"></button><button data-anim="next" title="Next step (→)">Next →</button><input id="anim-scrub" type="range" min="0" max="${info.total - 1}" step="0.01" value="${info.position}" aria-label="Animation timeline"><button data-anim="replay" title="Replay from the start">↺ Replay</button><button data-anim="surface" class="handoff" hidden>Open in Surface net</button></div>`;
   updatePlayer(info);
@@ -512,29 +537,41 @@ function renderControls() {
   }
 
   if (state.topic === "surface") {
+    const layers = planeLayers();
+    const hexagonal = layers.structure.hexagonal;
+    const layer = currentLayer();
     html =
       '<div class="control-title">A SINGLE ATOMIC LAYER</div>' +
-      textField("Surface normal (h k l)", "hkl") +
-      indexButtons("hkl", ["0 0 1", "1 1 0", "1 1 1", "1 1 2", "2 1 0", "1 -1 0"]) +
+      (hexagonal
+        ? textField("HCP plane (h k l) or (h k i l)", "hkl", { hint: "a₁, a₂, c axes" }) +
+          `<div class="presets">${STRUCTURES.hcp.planes.map(([value, label]) => `<button data-pick="hkl" data-value="${value}" class="${fmtVec(state.hkl) === value ? "active" : ""}">${label}</button>`).join("")}</div>` +
+          note(`(${fmtVec(state.hkl)}) on a₁, a₂, c is (${layers.label}) with i = −(h + k).`)
+        : textField("Surface normal (h k l)", "hkl") +
+          indexButtons("hkl", ["0 0 1", "1 1 0", "1 1 1", "1 1 2", "2 1 0", "1 -1 0"])) +
       textField("Occupied layer index", "layer", {
         type: "number",
         min: -500,
         max: 500,
         step: 1,
-        value: currentLayer(),
+        value: layer,
       }) +
       (state.location === "layer"
         ? ""
         : '<button data-action="use-layer">Keep this layer when the plane moves</button>') +
       note(
-        `Layer ${currentLayer()} at c = ${fmt(currentLayer() * planeInfo(state.hkl).step)}${state.location === "layer" ? "." : `, the occupied layer nearest to the ${escapeHtml(state.location)} plane.`}`,
+        `Layer ${layer} at c = ${fmt(layerS(layers, layer) * gcdOf(state.hkl))}${state.location === "layer" ? "." : `, the occupied layer nearest to the ${escapeHtml(state.location)} plane.`}`,
       ) +
       section(
         "animate",
-        "Animate: 3D cell ⇄ 2D net",
-        `<div class="anim-launch">${ANIMATION_MODES.map(([key, title]) => `<button data-anim-mode="${key}" class="${state.workspace === "animation" && state.animMode === key ? "active" : ""}">${title}</button>`).join("")}</div>` +
+        "Animate: cells, arrays and layers",
+        selectField(
+          "Crystal structure",
+          "animStructure",
+          STRUCTURE_KEYS.map((key) => [key, `${STRUCTURES[key].short} · ${STRUCTURES[key].name}`]),
+        ) +
+          `<div class="anim-launch">${ANIMATION_MODES.map(([key, title]) => `<button data-anim-mode="${key}" class="${state.workspace === "animation" && state.animMode === key ? "active" : ""}">${title}</button>`).join("")}</div>` +
           note(
-            "Opens the Cell ⇄ Net 3D view for this plane and layer. Step with the player under the view or the ← / → keys.",
+            `Opens the Cell ⇄ Net 3D view for this structure, plane and layer. Step with the player under the view or the ← / → keys.${state.animStructure === "fcc" ? "" : " The Surface net view and the tools below stay FCC."}`,
           ),
         true,
       ) +
@@ -700,14 +737,15 @@ function currentValues() {
   }
 
   if (concept === "cellnet") {
-    const layers = layerGeometry(s.hkl, s.a);
+    const layers = planeLayers(s);
     return valueList([
-      ["Plane", `(${millerLabel(layers.hkl)}) · layer ${currentLayer()}`],
-      ["Net", layers.type.replace("-", " ")],
-      ["Layer spacing d", `${fmt(layers.d * s.a)} Å`],
+      ["Structure", `${layers.structure.short} · ${layers.structure.name}`],
+      ["Plane", `(${layers.label}) · layer ${currentLayer()}`],
+      ["Net", netText(layers)],
+      ["Layer spacing d", spacingText(layers, s.a)],
       ["Stacking period N", layers.period],
       ["Primitive cell", `${layers.lengths.map((length) => fmt(length * s.a)).join(" / ")} Å`],
-      ["Area per atom", `${fmt(layers.area * s.a * s.a)} Å²`],
+      ["Area per atom", `${fmt((layers.area / layers.atomsPerCell) * s.a * s.a)} Å²`],
     ]);
   }
 
@@ -910,23 +948,41 @@ function renderCalculate() {
     );
 
   if (s.topic === "surface" || s.workspace === "animation") {
-    const layers = layerGeometry(s.hkl, s.a);
+    const layers = planeLayers(s);
+    const structure = layers.structure;
+    const uniform = layers.layersPerStep === 1;
     const layer = currentLayer();
-    const cube = cubeAround(layers, layer);
-    const cut = classifyCut(layers, cube.slices.find((slice) => slice.layer === layer).polygon);
+    const cell = cellAround(layers, layer);
+    const cut = classifyCut(layers, cell.slices.find((slice) => slice.layer === layer).polygon);
+    const cellName = structure.hexagonal ? "Prism" : "Cube";
+    const shiftLengths = [...new Set(layers.shifts.map((shift) => fmt(norm(shift) * s.a)))];
     html +=
-      `<h3>Layers of (${millerLabel(layers.hkl)})</h3><div class="equation">s = ${layers.hkl.map((value, axis) => `${value}${"XYZ"[axis]}`).join(" + ")}<br>layer j: s = j × ${fmt(layers.step)}<br>d = Δs·a/|hkl|</div>` +
+      `<h3>Layers of ${structure.short} (${layers.label})</h3><div class="equation">${
+        structure.hexagonal
+          ? `s = ${layers.hkl.map((value, axis) => `${value}f${"₁₂₃"[axis]}`).join(" + ")}  (fractions of a₁, a₂, c)`
+          : `s = ${layers.hkl.map((value, axis) => `${value}${"XYZ"[axis]}`).join(" + ")}`
+      }<br>${uniform ? `layer j: s = j × ${fmt(layers.step)}` : `layers at s = ${layers.offsets.map((offset) => fmt(offset)).join(", ")} (+ multiples of ${fmt(layers.step)})`}<br>${structure.hexagonal ? "d = Δs/|G|, G = h b₁ + k b₂ + l b₃" : "d = Δs·a/|hkl|"}</div>` +
       valueList([
-        ["Reduced indices", `(${fmtVec(layers.hkl)})`],
+        [
+          "Reduced indices",
+          `(${fmtVec(layers.hkl)})${structure.hexagonal ? ` = (${layers.label})` : ""}`,
+        ],
         ["Layer step Δs", fmt(layers.step)],
-        ["Layer spacing d", `${fmt(layers.d * s.a)} Å`],
-        ["Net", layers.type.replace("-", " ")],
+        ["Layer spacing d", spacingText(layers, s.a)],
+        ["Net", netText(layers)],
         [
           "Interlayer shift",
-          `${fmt(norm(layers.shift) * s.a)} Å · (${layers.shiftFractions.map((value) => fmt(value)).join(", ")}) in t₁, t₂`,
+          uniform
+            ? `${fmt(norm(layers.shift) * s.a)} Å · (${layers.shiftFractions.map((value) => fmt(value)).join(", ")}) in t₁, t₂`
+            : `${shiftLengths.join(" / ")} Å, ${shiftLengths.length > 1 ? "alternating" : "direction alternating"}`,
         ],
         ["Stacking period N", layers.period],
-        ["N·d (shortest lattice vector ∥ n)", `${fmt(layers.repeat * s.a)} Å`],
+        [
+          layers.evenlySpaced
+            ? "N·d (shortest lattice vector ∥ n)"
+            : "N layers span (shortest lattice vector ∥ n)",
+          `${fmt(layers.repeat * s.a)} Å`,
+        ],
         [
           "Centered cell",
           layers.centered
@@ -934,12 +990,12 @@ function renderCalculate() {
             : "none (net is primitive " + layers.type.replace("-", " ") + ")",
         ],
         [
-          `Cube cut of layer ${layer}`,
+          `${cellName} cut of layer ${layer}`,
           `${cut.shape}${cut.isCell ? `, a cell with ${cut.atoms} atoms` : ", not a cell"}`,
         ],
         [
-          "Layers in one cube",
-          `${cube.layers.length} · balls ${cube.slices.map((slice) => slice.count).join(", ")}`,
+          `Layers in one ${cellName.toLowerCase()}`,
+          `${cell.layers.length} · balls ${cell.slices.map((slice) => slice.count).join(", ")}`,
         ],
       ]);
   }
@@ -1072,17 +1128,26 @@ function renderStats() {
   let stats;
 
   if (s.workspace === "animation") {
-    const layers = layerGeometry(s.hkl, s.a);
-    const sequence = Array.from({ length: Math.min(layers.period + 1, 7) }, (_, j) =>
-      layerLetter(j, layers.period),
-    ).join("");
+    const layers = planeLayers(s);
+    const layer = currentLayer();
+    const sequence = stackingLetters(layers, layer, Math.min(layers.period + 1, 7)).join("");
     stats = [
       [
-        "Plane",
-        `(${millerLabel(layers.hkl)})`,
-        `${layers.type.replace("-", " ")} net · layer ${currentLayer()}`,
+        `${layers.structure.short} plane`,
+        `(${layers.label})`,
+        `${layers.type.replace("-", " ")} net · layer ${layer}`,
       ],
-      ["Layer spacing d", fmt(layers.d * s.a), `Å · Δs = ${fmt(layers.step)}`],
+      layers.evenlySpaced
+        ? [
+            "Layer spacing d",
+            fmt(layers.d * s.a),
+            `Å · Δs = ${fmt(layers.step / layers.layersPerStep)}`,
+          ]
+        : [
+            "Layer spacings",
+            layers.gaps.map((gap) => fmt(gap * s.a, 3)).join(" / "),
+            "Å · alternating",
+          ],
       [
         "Stacking period",
         `N = ${layers.period}`,
@@ -1258,25 +1323,25 @@ function renderLegend() {
 
   if (s.workspace === "animation") {
     // Only what the current step shows.
-    const layers = layerGeometry(s.hkl);
-    const plane = millerLabel(layers.hkl);
+    const layers = planeLayers(s);
+    const structure = layers.structure;
     const info = viewer?.cellNet?.info();
     const on = new Set(info?.visible ?? []);
+    const letters = (info?.letters ?? []).sort(([x], [y]) => x.localeCompare(y));
 
-    if (s.animMode === "build") {
-      const letters = (info?.letters ?? []).sort(([x], [y]) => x.localeCompare(y));
+    if (letters.length) {
       for (const [letter, color] of letters.slice(0, 4)) items.push([color, `Layer ${letter}`]);
       if (letters.length > 4) items.push(["#9fb3bf", `… ${letters.length} registries`]);
     } else {
       items.push(
         on.has("color")
           ? ["linear-gradient(90deg,#3f8fc4,#e08a3c,#8e6bc9,#4aa37c)", "Balls colored by layer (s)"]
-          : [s.color, `${s.element} atoms`],
+          : [s.color, structure.key === "fcc" ? `${s.element} atoms` : `${structure.short} atoms`],
       );
     }
 
-    if (on.has("plane")) items.push([s.planeColor, `(${plane}) plane`]);
-    if (on.has("cut")) items.push(["#e4572e", "Cut by the cube walls"]);
+    if (on.has("plane")) items.push([s.planeColor, `(${layers.label}) plane`]);
+    if (on.has("cut")) items.push(["#e4572e", `Cut by the ${structure.cellName} walls`]);
     if (on.has("conv") || (on.has("morphCell") && !on.has("morph") && layers.centered)) {
       items.push(["#5185a0", "Centered cell"]);
     }
@@ -1285,9 +1350,12 @@ function renderLegend() {
     }
     if (on.has("shift")) items.push([s.dirColor, "Interlayer shift"]);
     if (on.has("dmark")) items.push(["#63879d", "Layer spacing d"]);
-    if (on.has("avec")) items.push(["#36ad9c", "a₁, a₂, a₃"]);
+    if (on.has("avec")) items.push(["#36ad9c", structure.vectorLabels.join(", ")]);
     if (on.has("diag")) items.push(["#d35f73", "[111] long diagonal"]);
-    if (on.has("cube")) items.push(["#6c8b9e", "Conventional cube"]);
+    if (on.has("cube")) {
+      items.push(["#6c8b9e", structure.hexagonal ? "Hexagonal prism" : "Conventional cube"]);
+    }
+    if (on.has("grid")) items.push(["#9fb3bf", "Cells of the 3D array"]);
   } else if (s.workspace === "stacking") {
     if (s.atoms) {
       for (const registry of s.registries) {
@@ -1639,7 +1707,21 @@ function applyInput(input, live = false) {
           : input.value;
 
     if (["hkl", "uvw", "hkl2", "uvw2", "load", "reflection"].includes(key)) {
-      value = parseIndices(value);
+      // HCP planes may also be typed as (h k i l).
+      value = parseIndices(
+        (key === "hkl" && structureKey() === "hcp" && fromMillerBravais(value)) || value,
+      );
+    }
+
+    // HCP indices refer to a₁, a₂, c: start from the basal plane unless the plane is an HCP pick.
+    if (
+      key === "animStructure" &&
+      value === "hcp" &&
+      !STRUCTURES.hcp.planes.some(([indices]) => indices === fmtVec(state.hkl))
+    ) {
+      update({ animStructure: value, hkl: [0, 0, 1] });
+      toast("HCP uses hexagonal axes a₁, a₂, c: starting from the basal plane (0001).");
+      return;
     }
 
     if (key === "cell") {

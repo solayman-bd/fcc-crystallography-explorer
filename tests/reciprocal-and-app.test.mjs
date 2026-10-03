@@ -117,18 +117,27 @@ test("calculation report includes the configuration and passing checks", () => {
 });
 
 test("teaching content is consistent", () => {
-  assert.equal(LESSONS.length, 15);
+  assert.equal(LESSONS.length, 18);
   for (const [concept, , preset] of LESSONS) {
     assert.ok(CONCEPTS[concept], concept);
     assert.ok(PRESETS[preset], preset);
   }
-  // Every animation mode has a guided-tour lesson.
-  const modes = LESSONS.map(([, , preset]) => PRESETS[preset].patch.animMode).filter(Boolean);
-  assert.deepEqual(modes.sort(), ["build", "deconstruct", "primitive"]);
-  // A saved view from before the animation existed still loads.
-  const { animMode, animSpeed, ...older } = DEFAULT_STATE;
+  // Every animation mode has a guided-tour lesson, and BCC and HCP have one each.
+  const patches = LESSONS.map(([, , preset]) => PRESETS[preset].patch);
+  const modes = [...new Set(patches.map((patch) => patch.animMode).filter(Boolean))];
+  assert.deepEqual(modes.sort(), ["build", "deconstruct", "netToPrim", "primToNet", "primitive"]);
+  for (const structure of ["bcc", "hcp"]) {
+    assert.ok(
+      patches.some((patch) => patch.animStructure === structure),
+      structure,
+    );
+  }
+  // A saved view from before the animation (or before its structures) existed still loads.
+  const { animMode, animSpeed, animStructure, ...older } = DEFAULT_STATE;
   assert.equal(validateState(older).animMode, "deconstruct");
+  assert.equal(validateState(older).animStructure, "fcc");
   assert.throws(() => validateState({ ...DEFAULT_STATE, animSpeed: 3 }));
+  assert.throws(() => validateState({ ...DEFAULT_STATE, animStructure: "diamond" }));
   for (const [, , concept] of TOPICS) assert.ok(CONCEPTS[concept]);
   for (const [key, concept] of Object.entries(CONCEPTS)) {
     for (const related of concept.related) assert.ok(CONCEPTS[related], `${key} → ${related}`);

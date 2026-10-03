@@ -34,9 +34,11 @@ My main goal is understanding. A learner should be able to ask a question, set u
 | Exports could pick up ghosts, holes, HCP comparisons or reciprocal points | XYZ/CIF/POSCAR always export the configured ideal **bulk FCC** supercell with unique periodic atoms. The export labels say so. |
 | Two separate implementations would drift apart | Both editions carry the same bundled HTML and core. The notebook checks a SHA-256 hash to confirm they are identical. |
 
-The additions I found most useful: a misconception panel, linked concept search, the numerical derivation next to each picture, a 15-step tour, explicit periodic wrapping, direct distances between two selections, reproducible view files and an independent Verify panel. All of them are in the app.
+The additions I found most useful: a misconception panel, linked concept search, the numerical derivation next to each picture, an 18-step tour, explicit periodic wrapping, direct distances between two selections, reproducible view files and an independent Verify panel. All of them are in the app.
 
 A later addition: a step-by-step "3D cell ⇄ 2D net" animation for any plane, in three modes (cutting the cube into layers and flattening one into the net, stacking nets back into the cube, and shrinking conventional cells to primitive ones). It reuses the same engine, renderer and Surface net frame, so its last 3D step hands off to the 2D view in the same orientation.
+
+A second addition extends those animations beyond FCC. They now work for simple cubic, BCC and HCP too, and two more modes walk the whole path in both directions: primitive cell → conventional cell → 3D array of cells → the array sliced into (hkl) layers → one 2D layer, and back. Only the Cell ⇄ Net workspace knows about the other structures; the Crystal, Surface net, Stacking and Reciprocal workspaces, the exports and the FCC checks stay FCC.
 
 ## 2. Prioritized requirements
 
@@ -68,13 +70,13 @@ A later addition: a step-by-step "3D cell ⇄ 2D net" animation for any plane, i
 
 I include these as **ideal geometry** only: Shockley partial-vector addition; stated intrinsic/extrinsic fault sequences; the coherent twin sequence and its marker plane.
 
-I deferred: relaxed defect structures, dislocation lines/cores and elastic fields, fault energies and partial separation, finite-temperature phonons, reconstruction/adsorption, full X-ray intensities or dynamical diffraction, pole figures/orientation distributions/EBSD, imported arbitrary crystals, noncubic lattices, a general multi-plane scene editor, multiple selected cell boxes, measured material-property databases, GIF/video encoding and export of defect/HCP structures. Each of these needs extra physical models or a separate workflow, and I don't want to stand in for them with misleading approximations.
+I deferred: relaxed defect structures, dislocation lines/cores and elastic fields, fault energies and partial separation, finite-temperature phonons, reconstruction/adsorption, full X-ray intensities or dynamical diffraction, pole figures/orientation distributions/EBSD, imported arbitrary crystals, noncubic lattices beyond the ideal HCP of the Cell ⇄ Net animations, a general multi-plane scene editor, multiple selected cell boxes, measured material-property databases, GIF/video encoding and export of defect/HCP structures. Each of these needs extra physical models or a separate workflow, and I don't want to stand in for them with misleading approximations.
 
 ## 3. Information architecture and interaction rules
 
 I organize the controls into seven task groups: Crystal & unit cells; Directions & planes; Surface crystallography; Atomic stacking; Local environment; Slip & Burgers vectors; Reciprocal & diffraction.
 
-The center holds five workspaces: the 3D crystal, the analytic 2D surface net, the 3D cell ⇄ net animation, the 3D stacking comparison and 3D reciprocal space. In the animation, a player (step label, caption, Back/Next, Play/Pause, Replay, scrubber, speed) replaces the selection inspector. A compact statistics strip and a selection inspector sit under the view. The right-hand panel switches between explanation, calculations, invariant checks and layer switches. On narrow screens that panel moves below the viewer.
+The center holds five workspaces: the 3D crystal, the analytic 2D surface net, the 3D cell ⇄ net animation, the 3D stacking comparison and 3D reciprocal space. In the animation, a player (structure, mode, step label, caption, Back/Next, Play/Pause, Replay, scrubber, speed) replaces the selection inspector. A compact statistics strip and a selection inspector sit under the view. The right-hand panel switches between explanation, calculations, invariant checks and layer switches. On narrow screens that panel moves below the viewer.
 
 My interaction rules:
 
@@ -87,7 +89,7 @@ My interaction rules:
 
 Every main explanation has a question, the idea in plain language, an equation, how to read the drawing, a common misconception, the current numerical values, a suggested experiment, related concepts and links to primary sources. I name the stacking and reciprocal coordinates explicitly. I keep the labels "3D primitive cell" and "2D primitive surface cell" distinct.
 
-The 15-lesson tour runs from conventional counting through primitive geometry, directions/planes, surfaces, the three cell ⇄ net animations, stacking, neighbors, holes, slip and reciprocal space. It never asks the learner to understand a term before showing how it is built.
+The 18-lesson tour runs from conventional counting through primitive geometry, directions/planes, surfaces, the cell ⇄ net animations (including the primitive → 3D → 2D path, BCC and HCP), stacking, neighbors, holes, slip and reciprocal space. It never asks the learner to understand a term before showing how it is built.
 
 ## 4. Technical architecture and stack comparison
 
@@ -111,12 +113,13 @@ How I split the source:
 |---|---|
 | `src/crystal/math.js` | Vector operations, signed integer GCD/Bézout operations, validation and symmetry |
 | `lattice.js`, `planes.js`, `surfaces.js` | Bulk FCC, plane intersection/layers and exact surface derivation |
-| `layers.js` | Layer spacing, net type, centered cell, interlayer shift, stacking period and cube cuts of a plane family |
+| `structures.js` | Simple cubic, BCC, FCC and HCP as a Bravais lattice plus a basis; (h k i l) indices for HCP |
+| `layers.js` | Layer spacing, net type, centered cell, interlayer shifts, stacking period, cell cuts, 3D arrays and primitive cells of a plane family in any of those structures |
 | `environment.js`, `slip.js`, `stacking.js`, `reciprocal.js` | Teaching constructions with no renderer dependency |
 | `verify.js` | Live scientific invariants |
 | `src/visualization/geometry.js` | Polygon and capped-sphere mesh construction |
 | `viewer.js`, `surface-view.js` | Three.js 3D and analytic SVG 2D adapters |
-| `cell-net.js` | The cell ⇄ net animation: step lists, tweening, captions, auto-rotation |
+| `cell-net.js` | The cell ⇄ net animations: step lists, tweening, captions, auto-rotation |
 | `src/education/concepts.js` | My explanations, misconceptions, lessons, presets and references |
 | `src/state.js`, `src/exports.js`, `src/app.js` | Validated settings, scoped exports and interface orchestration |
 | `build.mjs`, `make_notebook.py`, `serve.py` | Reproducible packaging and launch |
@@ -150,7 +153,9 @@ For a surface translation `t=m1 p1 + m2 p2 + m3 p3`, the in-plane condition is t
 
 I get an exact primitive integer-kernel basis from Bézout identities. Two-dimensional Gauss reduction changes the basis only through integer unimodular operations, so the lattice is preserved. I map the two resulting integer vectors into cubic coordinates. Their cross-product magnitude is the primitive area. There is one lattice point per primitive surface cell, so the density is the inverse of the area. The independent check `A × Δ = a³/4` rules out a nonprimitive cell with a multiple of the area. To get the actual selected layer, I find a Bézout particular solution at `c=jg/2` and add the two translation generators. I project with `e1=t1/|t1|`, `e3=n/|n|`, `e2=e3×e1`.
 
-For the cell ⇄ net animation I work with the reduced indices. Layer j sits at `s = hX + kY + lZ = jΔs` with `Δs = g/2`, and neighboring layers are `d = Δs·a/|hkl|` apart. The interlayer shift is a lattice vector reaching layer 1, projected into the plane and reduced to its shortest in-plane representative. The stacking period N is the smallest j for which j shifts add up to a net vector; then `N·d` equals the shortest lattice vector along `[hkl]`. A net is "centered" when perpendicular net vectors u, v span twice the primitive area with a lattice point at the center (the a × a square of (001), the a/√2 × a√(3/2) rectangle of (111)). The cube placed around the selected layer is the unit cube translated by an integer vector, so the layer cuts through its middle.
+For the cell ⇄ net animation I work with the reduced indices. Layer j sits at `s = hX + kY + lZ = jΔs` with `Δs = g/2`, and neighboring layers are `d = Δs·a/|hkl|` apart. The interlayer shift is a lattice vector reaching layer 1, projected into the plane and reduced to its shortest in-plane representative. The stacking period N is the smallest j for which j shifts add up to a net vector; then `N·d` equals the shortest lattice vector along `[hkl]`. A net is "centered" when perpendicular net vectors u, v span twice the primitive area with a lattice point at the center (the a × a square of (001), the a/√2 × a√(3/2) rectangle of (111)). The cube placed around the selected layer is the unit cube translated by an integer vector, so the layer cuts through its middle. When the layer through the middle holds no ball of the cube (FCC (332), for example), I move the cube to the nearest position where the selected layer does hold some.
+
+For simple cubic, BCC and HCP I generalize the same construction to a Bravais lattice with primitive vectors pᵢ plus a basis βᵦ. Miller indices refer to the conventional axes Aᵢ (the cube edges, or a₁, a₂, c for HCP with the ideal c/a = √(8/3)); for HCP I write (h k l) as (h k i l) with i = −(h + k). The plane normal is the reciprocal vector `G = h b₁ + k b₂ + l b₃` with `bᵢ·Aⱼ = δᵢⱼ`, and a point lies on the layer with slice value `s = G·X`. The lattice slice values `s(Σ mᵢpᵢ) = q·m/D` are integers over a denominator D (2 for BCC and FCC), so lattice layers sit `Δs = gcd(q)/D` apart and the in-plane net is again an integer kernel of q, Gauss-reduced. Each basis atom adds its own slice value σᵦ. Atoms whose σᵦ agree modulo Δs share a layer; otherwise they form extra layers in between. For HCP (0001), the B atoms make their own layers halfway, giving ABAB with d = c/2. On the (10−10) prism planes they split the gaps into a√3/6 and a√3/3. On (11−20) both atoms share one layer, so that net holds 2 atoms per cell. With M layers per lattice step, the stacking period is `N = M·k`, where k is the smallest number of lattice steps whose in-plane shifts add up to a net vector. The identities `area × Δs/|G| = V_primitive` (a³, a³/2, a³/4, (√3/2)a²c) and `N·d̄ = ` the shortest lattice vector along G hold for every plane. The conventional cell is a cube, or for HCP the hexagonal prism of three primitive cells (12 corners × ⅙ + 2 × ½ + 3 = 6 atoms). The 3D array is 3 × 3 × 3 cubes, or 7 prisms in each of 3 stories. Registry letters A, B, C… come from comparing the in-plane positions of each layer's atoms modulo the net.
 
 Neighbor translations give shells of 12 at `a/√2`, 6 at `a` and 24 at `a√(3/2)`. Octahedral holes have six hosts and four sites per periodic cell. Tetrahedral holes have four hosts and eight sites. The maximum touching-sphere ratios are `√2−1` and `√(3/2)−1`.
 
@@ -162,7 +167,7 @@ Reciprocal vectors obey `pi·bj=2πδij`. In conventional reciprocal units of `2
 
 ## 6. Validation and acceptance
 
-My tests check identities and consequences I can measure independently, not just screenshots or a second copy of the same code. They cover all counts, surface primitivity for 2,196 signed index triples, unreduced-index behavior, signed plane intersections, translation minimality, neighbor/void environments, slip geometry, stacking nonoverlap, the inverse FCC-frame mapping, reciprocal duality, mesh volumes and structural export counts. For the animation they check d, the primitive net, the area per atom and the period N for (001), (110), (111), (112) and (210); that (1 −1 0) matches (110) and (002) reduces to (001); that the shift is the shortest one; and that the stacked layers put exactly 14 balls in one cube for every plane tested.
+My tests check identities and consequences I can measure independently, not just screenshots or a second copy of the same code. They cover all counts, surface primitivity for 2,196 signed index triples, unreduced-index behavior, signed plane intersections, translation minimality, neighbor/void environments, slip geometry, stacking nonoverlap, the inverse FCC-frame mapping, reciprocal duality, mesh volumes and structural export counts. For the animation they check d, the primitive net, the area per atom and the period N for (001), (110), (111), (112) and (210); that (1 −1 0) matches (110) and (002) reduces to (001); that the shift is the shortest one; and that the stacked layers put exactly 14 balls in one cube for every plane tested. For simple cubic, BCC and HCP they check matching acceptance tables and HCP's (h k i l) input. For all four structures and all 342 index triples within ±3, they check the area × step = primitive volume identity, `N·d̄` against an independently found shortest lattice vector, that the selected layer always holds balls of its cell, that every drawn point is a real atom, and that the stacks fill one cell with exactly 8, 9, 14 or 17 balls. I also compared the generalized engine with the FCC-only version it replaced on 734 planes: every FCC result is identical, except the placements that used to miss every ball.
 
 My browser checks cover the actual controls, raycast selection, all teaching presets, rejection of invalid input, 10³-cell limits, slider updates, empty scenes in all workspaces, saved camera round-trips, downloaded PNG/SVG/XYZ, search, the guided lessons and the exact Python-generated notebook iframe.
 

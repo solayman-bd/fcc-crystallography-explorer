@@ -104,6 +104,7 @@ export const DEFAULT_STATE = {
   pngScale: 2,
   lesson: -1,
   animMode: "deconstruct",
+  animStructure: "fcc",
   animSpeed: 1,
 };
 
@@ -121,7 +122,8 @@ export const CHOICES = {
   planeSet: ["one", "symmetry", "parallel", "atomic"],
   stack: ["fcc", "hcp", "aaa", "intrinsic", "extrinsic", "twin"],
   holes: ["none", "octa", "tetra", "both"],
-  animMode: ["deconstruct", "build", "primitive"],
+  animMode: ["deconstruct", "build", "primitive", "primToNet", "netToPrim"],
+  animStructure: ["sc", "bcc", "fcc", "hcp"],
   animSpeed: [0.5, 1, 2],
 };
 

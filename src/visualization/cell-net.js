@@ -1,6 +1,13 @@
 /**
- * "3D cell ⇄ 2D net": a step-by-step animation of how one conventional cube is cut into the
- * atomic layers of a plane family, flattened into the 2D net, and rebuilt by stacking.
+ * Cell ⇄ Net: step-by-step animations of how the cells, the 3D array and the atomic layers of a
+ * crystal fit together, for simple cubic, BCC, FCC and HCP.
+ *
+ *   3D cell → 2D net       one conventional cell is cut into the layers of a plane family and
+ *                          flattened into the 2D net;
+ *   2D net → 3D cell       the net is stacked back into the crystal;
+ *   Primitive cells        the smallest cells, in 2D and in 3D;
+ *   Primitive → 3D → 2D    primitive cell → conventional cell → 3D array → layers → one 2D array;
+ *   2D → 3D → primitive    the same path backwards.
  *
  * It runs inside the CrystalViewer (same renderer, camera, controls, lights and labels) but keeps
  * every object in its own group. Each step is a set of numbers (opacities, layer offsets along the
@@ -30,22 +37,29 @@ import {
   Vector3,
 } from "three";
 import { ConvexGeometry } from "three/addons/geometries/ConvexGeometry.js";
-import { PRIMITIVE_VECTORS, primitiveCellCorners } from "../crystal/lattice.js";
 import {
+  cellArray,
+  cellAround,
   cellCount,
   classifyCut,
-  cubeAround,
-  inCube,
+  gapAbove,
+  inCell,
   layerGeometry,
-  layerLetter,
+  layerHeight,
   layerPoints,
-  millerLabel,
+  layerS,
   nearestLayerPoint,
   planeCoords,
+  planeLabel,
+  primitiveCell,
   projectedSpots,
+  registryLetter,
+  shiftAbove,
+  stackingIndices,
   stackPlan,
 } from "../crystal/layers.js";
 import { add, dot, formatNumber, norm, normalize, scale, subtract } from "../crystal/math.js";
+import { structureOf } from "../crystal/structures.js";
 import { polygonGeometry } from "./geometry.js";
 
 /** Animation modes, in the order shown in the player. */
@@ -53,10 +67,18 @@ export const ANIMATION_MODES = [
   ["deconstruct", "3D cell → 2D net"],
   ["build", "2D net → 3D cell"],
   ["primitive", "Primitive cells"],
+  ["primToNet", "Primitive → 3D → 2D"],
+  ["netToPrim", "2D → 3D → primitive"],
 ];
+
+/** The two modes that walk primitive cell ⇄ conventional cell ⇄ 3D array ⇄ 2D layer. */
+const JOURNEYS = ["primToNet", "netToPrim"];
 
 const DURATION = 1100;
 const OBLIQUE = normalize([1.15, -1.55, 1.15]);
+// BCC atoms line up along the body diagonals, which OBLIQUE nearly follows; SC and BCC cells are
+// seen from further off the diagonal.
+const OBLIQUE_CUBIC = normalize([1, -1.9, 1]);
 const LAYER_PALETTE = [
   "#3f8fc4",
   "#e08a3c",
@@ -74,11 +96,15 @@ const LAYER_PALETTE = [
 ];
 const CUT_COLOR = "#e4572e";
 const CENTERED_COLOR = "#5185a0";
+const CELL_COLOR = "#6c8b9e";
+const GRID_COLOR = "#9fb3bf";
+const VECTOR_COLORS = ["#36ad9c", "#a081d1", "#db9151"];
 const easeInOutQuad = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp01 = (t) => Math.min(1, Math.max(0, t));
 const f3 = (value) => formatNumber(value, 3).replace("-", "−");
 const v3 = (p) => new Vector3(...p);
+const pointKey = (p) => p.map((value) => Math.round(value * 1e5) + 0).join(",");
 
 /** Fade every material of an object; hide it when fully transparent. */
 function fade(object, alpha, base = 1, solid = false) {
@@ -107,12 +133,14 @@ export class CellNetAnimation {
     this.viewer = viewer;
     this.state = state;
     this.mode = state.animMode;
+    this.structure = structureOf(state.animStructure);
+    this.oblique = ["sc", "bcc"].includes(this.structure.key) ? OBLIQUE_CUBIC : OBLIQUE;
     this.layer = layer;
     this.speed = state.animSpeed;
     this.a = state.a;
-    this.g = layerGeometry(state.hkl, state.a);
-    this.cube = cubeAround(this.g, layer);
-    this.radius = state.radiusMode === "physical" ? 1 / (2 * Math.SQRT2) : state.radius;
+    this.g = layerGeometry(state.hkl, state.a, this.structure);
+    this.cell = cellAround(this.g, layer);
+    this.radius = state.radiusMode === "physical" ? this.structure.physicalRadius : state.radius;
     this.group = new Group();
     this.labels = [];
     this.channels = [];
@@ -134,27 +162,42 @@ export class CellNetAnimation {
     this.n = e3;
     this.e1 = e1;
     this.e2 = e2;
-    // Foot of the cube center on the selected layer, and the layer point nearest to it.
-    const s0 = layer * this.g.step;
+    // Foot of the cell center on the selected layer, and the layer point nearest to it.
     this.foot = subtract(
-      this.cube.center,
-      scale(this.n, (dot(this.g.hkl, this.cube.center) - s0) / norm(this.g.hkl)),
+      this.cell.center,
+      scale(this.n, (dot(this.g.G, this.cell.center) - layerS(this.g, layer)) / this.g.gNorm),
     );
-    this.origin = nearestLayerPoint(this.g, layer, this.cube.center);
+    this.origin = nearestLayerPoint(this.g, layer, this.cell.center);
     this.netRadius = Math.min(6, Math.max(1.7, 3 * Math.max(...this.g.lengths)));
+    // Stacking registry (A = 0, B = 1, …) of the layers, counted from the selected one.
+    this.registries = stackingIndices(this.g, layer, Math.min(this.g.period, 5000));
 
-    this.build();
+    if (JOURNEYS.includes(this.mode)) {
+      this.buildJourney();
+    } else {
+      this.build();
+    }
     this.steps = this.makeSteps();
     this.applyAt(0, this.viewAt(0));
   }
 
   // ------------------------------------------------------------------ scene objects
 
+  registryOf(j) {
+    const N = this.g.period;
+    const offset = (((j - this.layer) % N) + N) % N;
+    return this.registries[offset] ?? offset;
+  }
+
+  letterOf(j) {
+    return registryLetter(this.registryOf(j));
+  }
+
   colorOf(j) {
     if (this.mode === "deconstruct") {
-      return LAYER_PALETTE[this.cube.layers.indexOf(j) % LAYER_PALETTE.length] ?? LAYER_PALETTE[0];
+      return LAYER_PALETTE[this.cell.layers.indexOf(j) % LAYER_PALETTE.length] ?? LAYER_PALETTE[0];
     }
-    const index = (((j - this.layer) % this.g.period) + this.g.period) % this.g.period;
+    const index = this.registryOf(j);
     return (
       [this.state.colorA, this.state.colorB, this.state.colorC][index] ??
       LAYER_PALETTE[(index + 3) % LAYER_PALETTE.length]
@@ -217,6 +260,16 @@ export class CellNetAnimation {
     return line;
   }
 
+  /** Line segments from [from, to] pairs. */
+  segments(pairs, color, parent) {
+    const lines = new LineSegments(
+      new BufferGeometry().setFromPoints(pairs.flat().map(v3)),
+      new LineBasicMaterial({ color, transparent: true }),
+    );
+    parent.add(lines);
+    return lines;
+  }
+
   arrow(origin, vector, color, parent) {
     const length = norm(vector);
     if (length < 1e-9) return null;
@@ -249,145 +302,84 @@ export class CellNetAnimation {
     outline.material.opacity = alpha;
   }
 
-  build() {
-    const { g, cube, state } = this;
-    const lift = (p, h = 0.004) => add(p, scale(this.n, h));
-
-    // Layers: Deconstruct/Primitive use the cube's balls plus the selected layer's net; Build uses
-    // the stack plan.
-    let points;
-    if (this.mode === "build") {
-      this.plan = stackPlan(g, this.layer);
-      points = this.plan.points;
-      this.layers = this.plan.layers;
-    } else {
-      const net = layerPoints(g, this.layer, this.cube.center, this.netRadius)
-        .filter((point) => !inCube(cube, point.p))
-        .map((point) => ({ ...point, inCube: false }));
-      points = [...cube.balls.map((ball) => ({ ...ball, inCube: true })), ...net];
-      this.layers = cube.layers;
-    }
-
-    const hostColor = new Color(state.color);
-    for (const j of this.layers) {
-      const holder = new Group();
-      this.group.add(holder);
-      const layerColor = new Color(this.colorOf(j));
-      const inside = this.spheres(
-        points.filter((p) => p.layer === j && p.inCube),
-        layerColor,
-        holder,
-      );
-      const outsidePoints = points.filter((p) => p.layer === j && !p.inCube);
-      const outside = this.spheres(outsidePoints, layerColor, holder);
-      const sliceData = cube.slices.find((slice) => slice.layer === j);
-      const slice = sliceData
-        ? this.polygon(sliceData.polygon, this.colorOf(j), holder, { fill: 0.3 })
-        : null;
-      const planar = outsidePoints.map((p) =>
-        Math.hypot(...planeCoords(g, subtract(p.p, this.foot))),
-      );
-      let lastGrow = null;
-      let letter = null;
-
-      // Letter tags; for long periods only the two A layers that bracket one repeat, so tags
-      // on closely spaced layers do not pile up.
-      const tagged = g.period <= 4 || j === this.layer || j === this.layer + g.period;
-      if (this.mode === "build" && this.plan.stack.includes(j) && tagged) {
-        const side = add(
-          add(this.foot, scale(this.n, (j - this.layer) * g.d)),
-          scale(this.e2, -(this.plan.radius + 0.3)),
-        );
-        letter = this.label(
-          layerLetter(j - this.layer, g.period),
-          side,
-          this.colorOf(j),
-          holder,
-          0.24,
-        );
-      }
-
-      this.channels.push((v) => {
-        holder.position.copy(v3(scale(this.n, v[`off:${j}`] ?? 0)));
-        const tint = hostColor.clone().lerp(layerColor, v.color);
-        for (const mesh of [inside, outside]) mesh?.material.color.copy(tint);
-        fade(inside, v[`in:${j}`] ?? 0, 1, true);
-        fade(outside, (v[`out:${j}`] ?? 0) * (1 - 0.95 * v.focus), 1, true);
-        this.fadePolygon(slice, v[`slice:${j}`] ?? 0);
-        fade(letter, v.letters * Math.max(v[`in:${j}`] ?? 0, v[`out:${j}`] ?? 0));
-
-        // The selected layer grows outward from the cube (Deconstruct).
-        if (outside && j === this.layer && this.mode !== "build" && v.grow !== lastGrow) {
-          lastGrow = v.grow;
-          const reach = lerp(0.9, this.netRadius + 0.3, v.grow);
-          const dummy = new Object3D();
-          outsidePoints.forEach((point, index) => {
-            const t = clamp01((reach - planar[index]) / 0.3 + 1);
-            dummy.position.set(...point.p);
-            dummy.scale.setScalar(this.radius * t);
-            dummy.updateMatrix();
-            outside.setMatrixAt(index, dummy.matrix);
-          });
-          outside.instanceMatrix.needsUpdate = true;
-        }
-      });
-    }
-    this.selectedHolder = this.group.children[this.layers.indexOf(this.layer)];
-
-    // Cube edges.
-    const corners = Array.from({ length: 8 }, (_, c) =>
-      add(cube.origin, [c & 1, (c >> 1) & 1, (c >> 2) & 1]),
+  /** Edges of the conventional cell (cube or hexagonal prism). */
+  cellEdges(color = CELL_COLOR) {
+    const { vertices, edges } = this.cell;
+    return this.segments(
+      edges.map(([i, k]) => [vertices[i], vertices[k]]),
+      color,
+      this.group,
     );
-    const segments = [];
-    for (let from = 0; from < 8; from++) {
-      for (let axis = 0; axis < 3; axis++) {
-        const to = from ^ (1 << axis);
-        if (to > from) segments.push(corners[from], corners[to]);
-      }
-    }
-    const edges = new LineSegments(
-      new BufferGeometry().setFromPoints(segments.map(v3)),
-      new LineBasicMaterial({ color: "#6c8b9e", transparent: true }),
-    );
-    this.group.add(edges);
+  }
 
-    // The selected plane, as a translucent sheet larger than the cube, and its cube cut.
-    const half = 1.15;
-    const sheet = this.polygon(
+  /** The plane of the selected layer, as a translucent square sheet around the foot point. */
+  planeSheet(half) {
+    return this.polygon(
       [
         [-1, -1],
         [1, -1],
         [1, 1],
         [-1, 1],
       ].map(([x, y]) => add(this.foot, add(scale(this.e1, x * half), scale(this.e2, y * half)))),
-      state.planeColor,
+      this.state.planeColor,
       this.group,
       { fill: 0.22 },
     );
-    const cutPolygon = cube.slices.find((slice) => slice.layer === this.layer)?.polygon ?? [];
-    const cut = this.polygon(
-      cutPolygon.map((p) => lift(p, 0.006)),
-      CUT_COLOR,
-      this.selectedHolder,
-      { fill: 0.18 },
-    );
+  }
 
-    // 2D cells on the selected layer.
-    const o = lift(this.origin);
-    const cellCorners = (u, v) => [o, add(o, u), add(add(o, u), v), add(o, v)];
-    const primitiveCorners = cellCorners(g.t1, g.t2);
-    const prim = this.polygon(primitiveCorners, state.surfaceColor, this.selectedHolder, {
-      fill: 0.3,
+  /** a₁, a₂, a₃ (a₁, a₂, c for HCP) from the cell origin. */
+  primitiveVectors() {
+    const group = new Group();
+    const S = this.structure;
+    VECTOR_COLORS.forEach((color, i) => {
+      this.arrow(this.cell.origin, S.primitive[i], color, group);
+      this.label(
+        S.vectorLabels[i],
+        add(add(this.cell.origin, scale(S.primitive[i], 0.62)), [0, 0, 0.1]),
+        color,
+        group,
+        0.22,
+      );
     });
-    const conv = g.centered
-      ? this.polygon(cellCorners(g.centered.u, g.centered.v), CENTERED_COLOR, this.selectedHolder, {
-          fill: 0.08,
-          dashed: true,
-        })
-      : null;
+    this.group.add(group);
+    return group;
+  }
+
+  /** The primitive cell as a translucent solid; returns a setter for its opacity. */
+  primitiveSolid(corners) {
+    const geometry = new ConvexGeometry(corners.map(v3));
+    const solid = new Group();
+    const fill = new Mesh(
+      geometry,
+      new MeshStandardMaterial({
+        color: this.state.surfaceColor,
+        side: DoubleSide,
+        transparent: true,
+        depthWrite: false,
+      }),
+    );
+    solid.add(
+      fill,
+      new LineSegments(
+        new EdgesGeometry(geometry, 12),
+        new LineBasicMaterial({ color: this.state.surfaceColor, transparent: true }),
+      ),
+    );
+    this.group.add(solid);
+    return (alpha) => {
+      solid.visible = alpha > 0.002;
+      fill.material.opacity = alpha * 0.22;
+      solid.children[1].material.opacity = alpha;
+    };
+  }
+
+  /** The primitive 2D cell t₁ × t₂ and its vectors on the selected layer. */
+  netCell(o, corners) {
+    const { g, state } = this;
+    const prim = this.polygon(corners, state.surfaceColor, this.selectedHolder, { fill: 0.3 });
     // Vectors float just above the balls so their heads are not hidden inside them.
     const vectors = new Group();
-    const top = lift(o, this.radius + 0.02);
+    const top = add(o, scale(this.n, this.radius + 0.02));
     this.arrow(top, g.t1, state.surfaceColor, vectors);
     this.arrow(top, g.t2, "#b777a6", vectors);
     this.label(
@@ -405,6 +397,114 @@ export class CellNetAnimation {
       0.22,
     );
     this.selectedHolder.add(vectors);
+    return { prim, vectors };
+  }
+
+  build() {
+    const { g, cell, state } = this;
+    const lift = (p, h = 0.004) => add(p, scale(this.n, h));
+
+    // Layers: Deconstruct/Primitive use the cell's balls plus the selected layer's net; Build uses
+    // the stack plan.
+    let points;
+    if (this.mode === "build") {
+      this.plan = stackPlan(g, this.layer);
+      points = this.plan.points;
+      this.layers = this.plan.layers;
+    } else {
+      const net = layerPoints(g, this.layer, cell.center, this.netRadius)
+        .filter((point) => !inCell(cell, point.p))
+        .map((point) => ({ ...point, inCell: false }));
+      points = [...cell.balls.map((ball) => ({ ...ball, inCell: true })), ...net];
+      this.layers = cell.layers;
+    }
+
+    const hostColor = new Color(state.color);
+    for (const j of this.layers) {
+      const holder = new Group();
+      this.group.add(holder);
+      const layerColor = new Color(this.colorOf(j));
+      const inside = this.spheres(
+        points.filter((p) => p.layer === j && p.inCell),
+        layerColor,
+        holder,
+      );
+      const outsidePoints = points.filter((p) => p.layer === j && !p.inCell);
+      const outside = this.spheres(outsidePoints, layerColor, holder);
+      const sliceData = cell.slices.find((slice) => slice.layer === j);
+      const slice = sliceData
+        ? this.polygon(sliceData.polygon, this.colorOf(j), holder, { fill: 0.3 })
+        : null;
+      const planar = outsidePoints.map((p) =>
+        Math.hypot(...planeCoords(g, subtract(p.p, this.foot))),
+      );
+      let lastGrow = null;
+      let letter = null;
+
+      // Letter tags; for long periods or close layers only the two A layers that bracket one
+      // repeat, so tags on closely spaced layers do not pile up.
+      const tagged =
+        (g.period <= 4 && Math.min(...g.gaps) > 0.33) ||
+        j === this.layer ||
+        j === this.layer + g.period;
+      if (this.mode === "build" && this.plan.stack.includes(j) && tagged) {
+        const side = add(
+          add(this.foot, scale(this.n, layerHeight(g, j) - layerHeight(g, this.layer))),
+          scale(this.e2, -(this.plan.radius + 0.3)),
+        );
+        letter = this.label(this.letterOf(j), side, this.colorOf(j), holder, 0.24);
+      }
+
+      this.channels.push((v) => {
+        holder.position.copy(v3(scale(this.n, v[`off:${j}`] ?? 0)));
+        const tint = hostColor.clone().lerp(layerColor, v.color);
+        for (const mesh of [inside, outside]) mesh?.material.color.copy(tint);
+        fade(inside, v[`in:${j}`] ?? 0, 1, true);
+        fade(outside, (v[`out:${j}`] ?? 0) * (1 - 0.95 * v.focus), 1, true);
+        this.fadePolygon(slice, v[`slice:${j}`] ?? 0);
+        fade(letter, v.letters * Math.max(v[`in:${j}`] ?? 0, v[`out:${j}`] ?? 0));
+
+        // The selected layer grows outward from the cell (Deconstruct).
+        if (outside && j === this.layer && this.mode !== "build" && v.grow !== lastGrow) {
+          lastGrow = v.grow;
+          const reach = lerp(0.9, this.netRadius + 0.3, v.grow);
+          const dummy = new Object3D();
+          outsidePoints.forEach((point, index) => {
+            const t = clamp01((reach - planar[index]) / 0.3 + 1);
+            dummy.position.set(...point.p);
+            dummy.scale.setScalar(this.radius * t);
+            dummy.updateMatrix();
+            outside.setMatrixAt(index, dummy.matrix);
+          });
+          outside.instanceMatrix.needsUpdate = true;
+        }
+      });
+    }
+    this.selectedHolder = this.group.children[this.layers.indexOf(this.layer)];
+
+    const edges = this.cellEdges();
+
+    // The selected plane, as a translucent sheet larger than the cell, and its cell cut.
+    const sheet = this.planeSheet((1.15 * cell.radius) / (Math.sqrt(3) / 2));
+    const cutPolygon = cell.slices.find((slice) => slice.layer === this.layer)?.polygon ?? [];
+    const cut = this.polygon(
+      cutPolygon.map((p) => lift(p, 0.006)),
+      CUT_COLOR,
+      this.selectedHolder,
+      { fill: 0.18 },
+    );
+
+    // 2D cells on the selected layer.
+    const o = lift(this.origin);
+    const cellCorners = (u, v) => [o, add(o, u), add(add(o, u), v), add(o, v)];
+    const primitiveCorners = cellCorners(g.t1, g.t2);
+    const { prim, vectors } = this.netCell(o, primitiveCorners);
+    const conv = g.centered
+      ? this.polygon(cellCorners(g.centered.u, g.centered.v), CENTERED_COLOR, this.selectedHolder, {
+          fill: 0.08,
+          dashed: true,
+        })
+      : null;
 
     // Morphing cell (Primitive mode): centered cell → primitive cell.
     const from = g.centered ? cellCorners(g.centered.u, g.centered.v) : primitiveCorners;
@@ -433,16 +533,14 @@ export class CellNetAnimation {
 
     // Build mode: interlayer shift and spacing marker.
     const shiftGroup = new Group();
-    if (norm(g.shift) > 1e-9) {
-      this.arrow(o, g.shift, state.dirColor, shiftGroup);
-      this.line(
-        [add(o, g.shift), add(add(o, g.shift), scale(this.n, g.d))],
-        state.dirColor,
-        shiftGroup,
-      );
+    const up = shiftAbove(g, this.layer);
+    const gap = gapAbove(g, this.layer);
+    if (norm(up) > 1e-9) {
+      this.arrow(o, up, state.dirColor, shiftGroup);
+      this.line([add(o, up), add(add(o, up), scale(this.n, gap))], state.dirColor, shiftGroup);
       this.label(
         "shift",
-        add(add(o, scale(g.shift, 0.5)), scale(this.n, 0.09)),
+        add(add(o, scale(up, 0.5)), scale(this.n, 0.09)),
         state.dirColor,
         shiftGroup,
         0.15,
@@ -451,53 +549,35 @@ export class CellNetAnimation {
     this.selectedHolder.add(shiftGroup);
     const dGroup = new Group();
     const dBase = add(this.foot, scale(this.e2, (this.plan?.radius ?? 1) + 0.15));
-    this.arrow(dBase, scale(this.n, g.d), "#63879d", dGroup);
+    this.arrow(dBase, scale(this.n, gap), "#63879d", dGroup);
     this.label(
-      `d = ${f3(g.d * this.a)} Å`,
-      add(dBase, add(scale(this.n, g.d / 2), scale(this.e2, 0.35))),
+      `d = ${f3(gap * this.a)} Å`,
+      add(dBase, add(scale(this.n, gap / 2), scale(this.e2, 0.35))),
       "#63879d",
       dGroup,
       0.15,
     );
     this.group.add(dGroup);
 
-    // Primitive mode: a1, a2, a3, the rhombohedron and its long diagonal.
-    const aGroup = new Group();
-    ["#36ad9c", "#a081d1", "#db9151"].forEach((color, i) => {
-      this.arrow(cube.origin, PRIMITIVE_VECTORS[i], color, aGroup);
-      this.label(
-        `a${"₁₂₃"[i]}`,
-        add(add(cube.origin, scale(PRIMITIVE_VECTORS[i], 0.62)), [0, 0, 0.1]),
-        color,
-        aGroup,
-        0.22,
-      );
-    });
-    this.group.add(aGroup);
-    const rhombGeometry = new ConvexGeometry(primitiveCellCorners(cube.origin).map(v3));
-    const rhomb = new Group();
-    const rhombFill = new Mesh(
-      rhombGeometry,
-      new MeshStandardMaterial({
-        color: state.surfaceColor,
-        side: DoubleSide,
-        transparent: true,
-        depthWrite: false,
-      }),
+    // Primitive mode: a₁, a₂, a₃, the primitive cell, its atoms outside the conventional cell
+    // (BCC) and the long diagonal (FCC).
+    const aGroup = this.primitiveVectors();
+    const primCell = primitiveCell(g, cell.origin);
+    const setRhombo = this.primitiveSolid(primCell.corners);
+    const extra = new Group();
+    this.spheres(
+      primCell.atoms.filter((atom) => !inCell(cell, atom.p)),
+      state.color,
+      extra,
     );
-    rhombFill.userData.base = 0.22;
-    rhomb.add(
-      rhombFill,
-      new LineSegments(
-        new EdgesGeometry(rhombGeometry, 12),
-        new LineBasicMaterial({ color: state.surfaceColor, transparent: true }),
-      ),
-    );
-    this.group.add(rhomb);
-    const diagonal = new Group();
-    this.line([cube.origin, add(cube.origin, [1, 1, 1])], "#d35f73", diagonal);
-    this.label("[111]", add(cube.origin, [1.06, 1.06, 1.1]), "#d35f73", diagonal);
-    this.group.add(diagonal);
+    this.group.add(extra);
+    let diagonal = null;
+    if (this.structure.key === "fcc") {
+      diagonal = new Group();
+      this.line([cell.origin, add(cell.origin, [1, 1, 1])], "#d35f73", diagonal);
+      this.label("[111]", add(cell.origin, [1.06, 1.06, 1.1]), "#d35f73", diagonal);
+      this.group.add(diagonal);
+    }
 
     this.channels.push((v) => {
       fade(edges, v.cube);
@@ -509,9 +589,8 @@ export class CellNetAnimation {
       fade(shiftGroup, v.shift);
       fade(dGroup, v.dmark);
       fade(aGroup, v.avec);
-      rhomb.visible = v.rhombo > 0.002;
-      rhombFill.material.opacity = v.rhombo * 0.22;
-      rhomb.children[1].material.opacity = v.rhombo;
+      setRhombo(v.rhombo);
+      fade(extra, v.rhombo, 1, true);
       fade(diagonal, v.diag);
       morph.visible = v.morphCell > 0.002;
       morph.children[0].material.opacity = v.morphCell * 0.3;
@@ -528,6 +607,114 @@ export class CellNetAnimation {
         const tint = centeredColor.clone().lerp(primitiveColor, v.morph);
         morph.children.forEach((child) => child.material.color.copy(tint));
       }
+    });
+  }
+
+  /**
+   * Scene of the two journey modes: the primitive cell, the conventional cell, the 3D array of
+   * cells around it (split into layers that can be pulled apart along the normal) and the
+   * selected layer grown into a 2D array beyond the block.
+   */
+  buildJourney() {
+    const { g, cell, state } = this;
+    const array = cellArray(g, cell);
+    const prim = primitiveCell(g, cell.origin);
+    const primKeys = new Set(prim.atoms.map((atom) => pointKey(atom.p)));
+    // 0: primitive-cell atoms in the conventional cell, 1: the cell's other atoms, 2: the rest of
+    // the array, 3: primitive-cell atoms outside the conventional cell (BCC).
+    const atoms = array.atoms.map((atom) => ({
+      ...atom,
+      set: primKeys.has(pointKey(atom.p)) ? (atom.inCell ? 0 : 3) : atom.inCell ? 1 : 2,
+    }));
+    const planarOf = (point) => Math.hypot(...planeCoords(g, subtract(point.p, this.foot)));
+    const onLayer = atoms.filter((atom) => atom.layer === this.layer);
+    const inner = Math.max(0.5, ...onLayer.map(planarOf));
+    const outer = Math.min(9, Math.max(inner + 0.6, 1.8 * this.netRadius));
+    const net = layerPoints(g, this.layer, this.foot, outer).filter(
+      (point) => !array.cells.some((c) => inCell(c, point.p)),
+    );
+
+    this.layers = [...new Set(atoms.map((atom) => atom.layer))].sort((x, y) => x - y);
+    const selected = this.layers.indexOf(this.layer);
+    const spread = Math.min(0.6, Math.max(0.25, 2.4 / this.layers.length));
+    this.explode = new Map(this.layers.map((j, i) => [j, (i - selected) * spread]));
+    this.journey = {
+      array,
+      prim,
+      atoms: atoms.length,
+      // Atom positions with the layers pulled apart, and the selected layer, for framing.
+      apart: atoms.map((atom) => add(atom.p, scale(this.n, this.explode.get(atom.layer)))),
+      selected: onLayer.map((atom) => atom.p),
+    };
+
+    const hostColor = new Color(state.color);
+    for (const j of this.layers) {
+      const holder = new Group();
+      this.group.add(holder);
+      const layerColor = new Color(this.colorOf(j));
+      const sets = [0, 1, 2, 3].map((set) =>
+        this.spheres(
+          atoms.filter((atom) => atom.layer === j && atom.set === set),
+          layerColor,
+          holder,
+        ),
+      );
+      const netPoints = j === this.layer ? net : [];
+      const grown = this.spheres(netPoints, layerColor, holder);
+      const planar = netPoints.map(planarOf);
+      let lastGrow = null;
+
+      this.channels.push((v) => {
+        holder.position.copy(v3(scale(this.n, v[`off:${j}`] ?? 0)));
+        const alpha = v[`lay:${j}`] ?? 0;
+        const tint = hostColor.clone().lerp(layerColor, v.color);
+        for (const mesh of [...sets, grown]) mesh?.material.color.copy(tint);
+        fade(sets[0], v.pAtoms * alpha, 1, true);
+        fade(sets[1], v.cAtoms * alpha, 1, true);
+        fade(sets[2], v.bAtoms * alpha, 1, true);
+        // Outside the conventional cell, primitive-cell atoms show with that cell or the array.
+        fade(sets[3], Math.max(v.pAtoms * v.rhombo, v.bAtoms) * alpha, 1, true);
+        fade(grown, v.nAtoms * alpha, 1, true);
+
+        // The selected layer grows beyond the array into the 2D net.
+        if (grown && v.grow !== lastGrow) {
+          lastGrow = v.grow;
+          const reach = lerp(inner, outer + 0.3, v.grow);
+          const dummy = new Object3D();
+          netPoints.forEach((point, index) => {
+            const t = clamp01((reach - planar[index]) / 0.3 + 1);
+            dummy.position.set(...point.p);
+            dummy.scale.setScalar(this.radius * t);
+            dummy.updateMatrix();
+            grown.setMatrixAt(index, dummy.matrix);
+          });
+          grown.instanceMatrix.needsUpdate = true;
+        }
+      });
+    }
+    this.selectedHolder = this.group.children[selected];
+
+    const edges = this.cellEdges("#4f6f82");
+    const grid = this.segments(array.segments, GRID_COLOR, this.group);
+    const sheet = this.planeSheet(0.8 * array.radius);
+    const setRhombo = this.primitiveSolid(prim.corners);
+    const aGroup = this.primitiveVectors();
+    const o = add(this.origin, scale(this.n, 0.004));
+    const { prim: prim2d, vectors } = this.netCell(o, [
+      o,
+      add(o, g.t1),
+      add(add(o, g.t1), g.t2),
+      add(o, g.t2),
+    ]);
+
+    this.channels.push((v) => {
+      fade(edges, v.cube);
+      fade(grid, v.grid, 0.6);
+      this.fadePolygon(sheet, v.plane);
+      setRhombo(v.rhombo);
+      fade(aGroup, v.avec);
+      this.fadePolygon(prim2d, v.prim);
+      fade(vectors, v.vec);
     });
   }
 
@@ -552,6 +739,11 @@ export class CellNetAnimation {
       diag: 0,
       focus: 0,
       color: 0,
+      grid: 0,
+      pAtoms: 0,
+      cAtoms: 0,
+      bAtoms: 0,
+      nAtoms: 0,
     };
     for (const j of this.layers)
       Object.assign(values, {
@@ -559,6 +751,7 @@ export class CellNetAnimation {
         [`out:${j}`]: 0,
         [`off:${j}`]: 0,
         [`slice:${j}`]: 0,
+        [`lay:${j}`]: 0,
       });
     return values;
   }
@@ -567,16 +760,57 @@ export class CellNetAnimation {
     return { target, quaternion: orientation(dir, up), span };
   }
 
+  /** A view from `dir` (target → camera) framed to fit `points`, with `pad` added to the span. */
+  fitView(points, dir, up, pad = 2 * this.radius + 0.7) {
+    const quaternion = orientation(dir, up);
+    const x = new Vector3(1, 0, 0).applyQuaternion(quaternion).toArray();
+    const y = new Vector3(0, 1, 0).applyQuaternion(quaternion).toArray();
+    const range = (axis) => {
+      const values = points.map((p) => dot(p, axis));
+      return [Math.min(...values), Math.max(...values)];
+    };
+    const [x0, x1] = range(x);
+    const [y0, y1] = range(y);
+    const center = scale(points.reduce(add, [0, 0, 0]), 1 / points.length);
+    const target = add(
+      center,
+      add(scale(x, (x0 + x1) / 2 - dot(center, x)), scale(y, (y0 + y1) / 2 - dot(center, y))),
+    );
+    // The stage is wider than tall; 1.5 keeps the width inside narrower windows too.
+    return { target, quaternion, span: Math.max(y1 - y0, (x1 - x0) / 1.5) + pad };
+  }
+
   makeSteps() {
-    const { g, a, cube, layer } = this;
-    const H = millerLabel(g.hkl);
-    const reducedNote =
-      millerLabel(g.input) === H ? "" : ` (${millerLabel(g.input)} reduces to (${H}))`;
+    const { g, a, cell, layer } = this;
+    const S = this.structure;
+    const fcc = S.key === "fcc";
+    const H = g.label;
+    const inputLabel = planeLabel(g.input, S);
+    const reducedNote = inputLabel === H ? "" : ` (${inputLabel} reduces to (${H}))`;
+    const along = S.hexagonal ? "the plane normal" : `[${H}]`;
     const len = (x) => f3(x * a);
+    const vol = (x) => f3(x * a ** 3);
     const typeName = g.type.replace("-", " ");
+    const perCell = g.atomsPerCell === 1 ? "1 atom" : `${g.atomsPerCell} atoms`;
+    // One shift repeats from layer to layer only when every layer is a lattice translate.
+    const uniform = g.layersPerStep === 1;
+    const spacing = g.evenlySpaced
+      ? `d = ${len(g.d)} Å apart`
+      : `alternately ${g.gaps.map(len).join(" and ")} Å apart`;
     const netView = (span) => this.view(this.foot, this.n, this.e2, span);
-    const cubeView = this.view(cube.center, OBLIQUE, [0, 0, 1], 2.5);
+    const cellSpan = (2.5 * cell.radius) / (Math.sqrt(3) / 2);
+    const cubeView = this.view(cell.center, this.oblique, [0, 0, 1], cellSpan);
     const cellText = `|t₁| = ${len(g.lengths[0])} Å, |t₂| = ${len(g.lengths[1])} Å, angle ${f3(g.angle)}°`;
+    const cellName = S.cellName;
+    const letters = (count) =>
+      Array.from({ length: count }, (_, i) => this.letterOf(layer + i)).join("");
+    const sequence = `${letters(Math.min(g.period + 1, 7))}${g.period + 1 > 7 ? "…" : ""}`;
+    const primitiveNote = {
+      sc: "For simple cubic it is the cube itself.",
+      bcc: `|aᵢ| = (√3/2)a = ${len(Math.sqrt(3) / 2)} Å, 109.47° between each pair.`,
+      fcc: `|aᵢ| = a/√2 = ${len(1 / Math.SQRT2)} Å, 60° between each pair.`,
+      hcp: "HCP is a hexagonal lattice with 2 atoms per lattice point: A at the corners, B inside.",
+    }[S.key];
     const steps = [];
     const step = (label, caption, values, view, flags = {}) =>
       steps.push({ label, caption, values, view, ...flags });
@@ -586,36 +820,38 @@ export class CellNetAnimation {
         Object.fromEntries(
           this.layers.filter((j) => j !== except).map((j) => [`${key}:${j}`, value]),
         );
-      const slice = cube.slices.find((s) => s.layer === layer);
+      const slice = cell.slices.find((s) => s.layer === layer);
       const cut = classifyCut(g, slice.polygon);
-      const spots = projectedSpots(g, cube.balls);
-      const sValues = cube.slices.map((s) => f3(s.layer * g.step)).join(", ");
-      const counts = cube.slices.map((s) => s.count).join(", ");
+      const spots = projectedSpots(g, cell.balls);
+      const sValues = cell.slices.map((s) => f3(layerS(g, s.layer))).join(", ");
+      const counts = cell.slices.map((s) => s.count).join(", ");
       const s1 = { ...this.base(), cube: 1, ...all("in", 1) };
       step(
-        "The cube",
-        `One conventional FCC cube: 8 corners + 6 face centers = 14 balls, edge a = ${f3(a)} Å.`,
+        `The ${cellName}`,
+        S.hexagonal
+          ? `One HCP hexagonal prism: ${S.ballsText} = ${S.ballsInCell} balls; a = ${f3(a)} Å, c = 1.633a = ${len(S.axes[2][2])} Å.`
+          : `One conventional ${S.short} cube: ${S.ballsInCell === 8 ? "8 corner balls" : `${S.ballsText} = ${S.ballsInCell} balls`}, edge a = ${f3(a)} Å.`,
         s1,
         cubeView,
       );
       step(
         `Cut by (${H})`,
-        `The (${H}) plane at layer ${layer} (s = ${f3(layer * g.step)}) cuts the cube in a ${cut.shape}.${reducedNote}`,
+        `The (${H}) plane at layer ${layer} (s = ${f3(layerS(g, layer))}) cuts the ${cellName} in a ${cut.shape}.${reducedNote}`,
         { ...s1, plane: 1, cut: 1 },
         cubeView,
       );
       const s3 = { ...s1, color: 1, cut: 0.5, ...all("slice", 1) };
       step(
         "All layers",
-        `(${H}) cuts the cube into ${cube.layers.length} layers, s = ${sValues}. Balls per layer: ${counts}. Neighboring layers are d = ${len(g.d)} Å apart.`,
+        `(${H}) cuts the ${cellName} into ${cell.layers.length} layers, s = ${sValues}. Balls per layer: ${counts}. Neighboring layers are ${spacing}.`,
         s3,
         cubeView,
       );
       step(
-        `Look along [${H}]`,
-        `Looking along [${H}] stacks every layer into one picture: ${spots} spots for 14 balls. Balls that overlap lie on different layers (picture B).`,
+        S.hexagonal ? "Look down the normal" : `Look along [${H}]`,
+        `Looking along ${along} stacks every layer into one picture: ${spots} spots for ${S.ballsInCell} balls. Balls that overlap lie on different layers (picture B).`,
         { ...s3, cut: 0, ...all("slice", 0.45) },
-        netView(2.3),
+        netView(2.3 * (cell.radius / (Math.sqrt(3) / 2))),
       );
       const s5 = {
         ...s1,
@@ -628,7 +864,7 @@ export class CellNetAnimation {
         "One layer",
         `Keep only layer ${layer}: now every distance is true (picture A). Each atom has ${g.coordination} nearest neighbors in the layer, ${len(g.neighborDistance)} Å away.`,
         s5,
-        netView(2.3),
+        netView(2.3 * (cell.radius / (Math.sqrt(3) / 2))),
       );
       const near = this.view(
         this.foot,
@@ -639,15 +875,18 @@ export class CellNetAnimation {
       const s6 = { ...this.base(), color: 1, grow: 1, [`in:${layer}`]: 1, [`out:${layer}`]: 1 };
       step(
         "Grow the net",
-        `Repeat the layer beyond the cube walls: an infinite ${typeName} net.`,
+        `Repeat the layer beyond the ${cellName} walls: an infinite ${typeName} net${g.atomsPerCell > 1 ? ` with ${perCell} per cell` : ""}.`,
         s6,
         near,
       );
+      const walls = `The ${cut.shape} cut by the ${cellName} walls`;
       step(
         "Cut vs. cell",
-        cut.isCell
-          ? `The ${cut.shape} cut by the cube walls is a cell of this net, but it holds ${cut.atoms} atoms, so it is not the smallest cell.`
-          : `The ${cut.shape} cut by the cube walls is not a cell: copies of it cannot fill the plane by translation alone.`,
+        !cut.isCell
+          ? `${walls} is not a cell: copies of it moved by net translations cannot tile the plane.`
+          : cut.atoms === g.atomsPerCell
+            ? `${walls} is itself a primitive cell of this net: ${perCell}.`
+            : `${walls} is a cell of this net, but it holds ${cut.atoms} atoms, so it is not the smallest cell.`,
         { ...s6, cut: 1 },
         near,
       );
@@ -657,16 +896,18 @@ export class CellNetAnimation {
         : "";
       step(
         "2D cells",
-        `Primitive cell t₁, t₂: ${cellText}, area ${f3(g.area * a * a)} Å², 1 atom; planar density ${f3(g.density / (a * a))} Å⁻².${centered}`,
+        `Primitive cell t₁, t₂: ${cellText}, area ${f3(g.area * a * a)} Å², ${perCell}; planar density ${f3(g.density / (a * a))} Å⁻².${centered}`,
         s7,
         near,
       );
       step(
         "Flatten to 2D",
-        `This is the Surface net 2D view of layer ${layer}: same orientation, e₁ along t₁. Open it to measure, label and export.`,
+        fcc
+          ? `This is the Surface net 2D view of layer ${layer}: same orientation, e₁ along t₁. Open it to measure, label and export.`
+          : `Layer ${layer} as a flat 2D net, seen face-on: e₁ along t₁, every distance true.`,
         s7,
         netView(2.1 * this.netRadius),
-        { handoff: true },
+        { handoff: fcc },
       );
     }
 
@@ -678,7 +919,8 @@ export class CellNetAnimation {
         this.layers.filter((j) => j !== layer).map((j) => [`off:${j}`, enter]),
       );
       const show = (j) => ({ [`in:${j}`]: 1, [`out:${j}`]: 1, [`off:${j}`]: 0 });
-      const stackHeight = (stackLayers.length - 1) * g.d;
+      const stackHeight =
+        layerHeight(g, stackLayers[stackLayers.length - 1]) - layerHeight(g, stackLayers[0]);
       const stackCenter = add(this.foot, scale(this.n, stackHeight / 2));
       // Seen from the −e₁ side, like the side view later on, so the A/B/C letters stay on the right.
       const tilt = this.view(
@@ -687,15 +929,12 @@ export class CellNetAnimation {
         this.n,
         Math.max(2.4 * plan.radius + 0.8, stackHeight * 1.8),
       );
-      const letters = (count) =>
-        stackLayers
-          .slice(0, count)
-          .map((j) => layerLetter(j - layer, g.period))
-          .join("");
+      const gap = (j) => len(gapAbove(g, j));
+      const shift = (j) => len(norm(shiftAbove(g, j)));
       let values = { ...this.base(), ...waiting, color: 1, ...show(layer), prim: 1, vec: 1 };
       step(
         "One layer",
-        `Start from one layer of (${H}): a ${typeName} net with ${cellText}.${reducedNote}`,
+        `Start from one layer of ${S.short} (${H}): a ${typeName} net with ${cellText}${g.atomsPerCell > 1 ? `, ${perCell} per cell` : ""}.${reducedNote}`,
         values,
         this.view(this.foot, this.n, this.e2, 2.4 * plan.radius),
       );
@@ -714,22 +953,31 @@ export class CellNetAnimation {
         };
         const last = group[group.length - 1];
         const count = last - layer;
-        const L = layerLetter(count, g.period);
+        const L = this.letterOf(last);
+        const repeat = g.evenlySpaced
+          ? `N·d = ${len(g.repeat)} Å, the shortest lattice vector along ${along}.`
+          : `Together these ${g.period} layers span ${len(g.repeat)} Å, the shortest lattice vector along ${along}.`;
         let caption;
-        if (index === 0) {
-          caption = `Layer B sits d = ${len(g.d)} Å higher and is shifted in-plane by ${len(norm(g.shift))} Å, so its atoms sit over the gaps of layer A.`;
+        if (g.period === 1) {
+          caption = `Layer 2 sits d = ${len(g.d)} Å straight above layer A, with no in-plane shift: the stacking is AAA… (N = 1). ${repeat}`;
         } else if (count === g.period) {
-          caption = `Layer ${count + 1} returns to A: the stacking repeats every N = ${g.period} layers (${letters(count + 1)}). N·d = ${len(g.repeat)} Å, the shortest lattice vector along [${H}].`;
+          caption = `Layer ${count + 1} returns to A: the stacking repeats every N = ${g.period} layers (${letters(count + 1)}). ${repeat}`;
+        } else if (index === 0) {
+          caption = `Layer ${L} sits ${g.evenlySpaced ? "d = " : ""}${gap(layer)} Å higher and is shifted in-plane by ${shift(layer)} Å, so its atoms sit over the gaps of layer A.`;
         } else if (group.length > 1) {
-          caption = `Layers ${group.map((j) => layerLetter(j - layer, g.period)).join(", ")} follow with the same shift: ${letters(count + 1)}…${g.period > 12 ? ` Showing the first 13 of the N = ${g.period}-layer repeat.` : ""}`;
-        } else {
+          caption = `Layers ${group.map((j) => this.letterOf(j)).join(", ")} follow ${uniform ? "with the same shift" : "the same way"}: ${letters(count + 1)}…${g.period > 12 ? ` Showing the first 13 of the N = ${g.period}-layer repeat.` : ""}`;
+        } else if (uniform) {
           caption = `Layer ${L} repeats the same shift: ${letters(count + 1)}.`;
+        } else {
+          caption = `Layer ${L} sits ${gap(last - 1)} Å above the previous one, shifted by ${shift(last - 1)} Å: ${letters(count + 1)}.`;
         }
         step(group.length > 1 ? "More layers" : `Layer ${L}`, caption, values, tilt);
       });
       step(
         "Side view",
-        `Seen from the side along e₁: layers are d = ${len(g.d)} Å apart, and each one is shifted by ${len(norm(g.shift))} Å along the layer.`,
+        uniform
+          ? `Seen from the side along e₁: layers are d = ${len(g.d)} Å apart, and each one is shifted by ${len(norm(g.shift))} Å along the layer.`
+          : `Seen from the side along e₁: the layers are ${spacing}, and each one is shifted along the layer.`,
         { ...values, dmark: 1, prim: 0, vec: 0 },
         this.view(
           stackCenter,
@@ -739,7 +987,7 @@ export class CellNetAnimation {
         ),
       );
       const allLayers = Object.assign({}, ...this.layers.map(show));
-      const inside = plan.points.filter((p) => p.inCube).length;
+      const inside = plan.points.filter((p) => p.inCell).length;
       const cubeValues = {
         ...values,
         ...allLayers,
@@ -751,19 +999,21 @@ export class CellNetAnimation {
         vec: 0,
       };
       step(
-        "Back to the cube",
-        `Turn back to the cube axes: exactly ${inside} balls of the stack fall inside one conventional cube (8 corners + 6 face centers).`,
+        S.hexagonal ? "Back to the prism" : "Back to the cube",
+        S.hexagonal
+          ? `Turn back to the hexagonal axes: exactly ${inside} balls of the stack fall inside one hexagonal prism (${S.ballsText}).`
+          : `Turn back to the cube axes: exactly ${inside} balls of the stack fall inside one conventional cube (${S.ballsText}).`,
         cubeValues,
         cubeView,
       );
       step(
         "Explore",
-        "The stacked layers are the FCC crystal. Drag to explore.",
+        `The stacked layers are the ${S.short} crystal. Drag to explore.`,
         cubeValues,
         cubeView,
         { autoRotate: true },
       );
-      this.ballsInCube = inside;
+      this.ballsInCell = inside;
     }
 
     if (this.mode === "primitive") {
@@ -771,18 +1021,19 @@ export class CellNetAnimation {
         Object.fromEntries(this.layers.map((j) => [`${key}:${j}`, value]));
       const net = { [`in:${layer}`]: 1, [`out:${layer}`]: 1, grow: 1, morphCell: 1 };
       const view2d = this.view(this.foot, this.n, this.e2, 2.1 * this.netRadius);
-      if (g.centered) {
-        const count = cellCount(g, this.origin, g.centered.u, g.centered.v);
-        const parts = [
+      const countText = (count, inside) =>
+        [
           `${count.corner} corners × ¼`,
           count.edge && `${count.edge} edge atoms × ½`,
-          count.inside && `${count.inside} center`,
+          count.inside && `${count.inside} ${inside}`,
         ]
           .filter(Boolean)
-          .join(" + ");
+          .join(" + ") + ` = ${count.total} ${count.total === 1 ? "atom" : "atoms"}`;
+      if (g.centered) {
+        const count = cellCount(g, layer, this.origin, g.centered.u, g.centered.v);
         step(
           "Centered 2D cell",
-          `Centered cell of the (${H}) net: ${len(norm(g.centered.u))} × ${len(norm(g.centered.v))} Å, area ${f3(2 * g.area * a * a)} Å², ${parts} = ${count.total} atoms.`,
+          `Centered cell of the (${H}) net: ${len(norm(g.centered.u))} × ${len(norm(g.centered.v))} Å, area ${f3(2 * g.area * a * a)} Å², ${countText(count, "center")}.`,
           { ...this.base(), ...net, morph: 0 },
           view2d,
         );
@@ -793,40 +1044,176 @@ export class CellNetAnimation {
           view2d,
         );
       } else {
+        const count = cellCount(g, layer, this.origin, g.t1, g.t2);
         step(
           "Primitive 2D cell",
-          `The (${H}) net is ${typeName}: its smallest cell t₁ × t₂ is already primitive. ${cellText}, area ${f3(g.area * a * a)} Å², 4 corners × ¼ = 1 atom.`,
+          g.atomsPerCell > 1
+            ? `The (${H}) layer is a ${typeName} net whose smallest cell t₁ × t₂ holds ${countText(count, "inside")}: the 2-atom basis of HCP shows up in this layer. ${cellText}, area ${f3(g.area * a * a)} Å².`
+            : `The (${H}) net is ${typeName}: its smallest cell t₁ × t₂ is already primitive. ${cellText}, area ${f3(g.area * a * a)} Å², ${countText(count, "inside")}.`,
           { ...this.base(), ...net, morph: 1, vec: 1 },
           view2d,
         );
       }
       const cubeBase = { ...this.base(), ...all("in", 1), cube: 1 };
       step(
-        "The cube",
-        `In 3D the conventional cube holds 8 × ⅛ + 6 × ½ = 4 atoms in a³ = ${f3(a ** 3)} Å³.`,
+        `The ${cellName}`,
+        `In 3D the conventional ${cellName} holds ${S.cellCountText} in ${S.cellVolumeText} = ${vol(S.cellVolume)} Å³.`,
         cubeBase,
         cubeView,
       );
       step(
-        "a₁, a₂, a₃",
-        "From one corner, a₁ = a/2[011], a₂ = a/2[101] and a₃ = a/2[110] reach three face centers.",
+        S.vectorLabels.join(", "),
+        {
+          sc: "From one corner, a₁ = a[100], a₂ = a[010] and a₃ = a[001] run along the cube edges.",
+          bcc: "From one corner, a₁ = a/2[−111], a₂ = a/2[1−11] and a₃ = a/2[11−1] reach the body centers of three neighboring cubes.",
+          fcc: "From one corner, a₁ = a/2[011], a₂ = a/2[101] and a₃ = a/2[110] reach three face centers.",
+          hcp: `From the center of the bottom hexagon, a₁ and a₂ (length a, 120° apart) lie in the basal plane and c = ${len(S.axes[2][2])} Å points up the hexagonal axis.`,
+        }[S.key],
         { ...cubeBase, avec: 1 },
         cubeView,
       );
       const rh = { ...cubeBase, ...all("in", 0.55), avec: 1, rhombo: 1 };
       step(
         "Primitive cell",
-        `The primitive rhombohedron: |aᵢ| = a/√2 = ${f3(a / Math.SQRT2)} Å, 60° between each pair, volume a³/4 = ${f3(a ** 3 / 4)} Å³: 1 atom instead of 4. Its corners are one cube corner, the six face centers and the opposite corner.`,
+        {
+          sc: `The cube itself is the primitive cell: |aᵢ| = a, 90° between each pair, volume a³ = ${vol(1)} Å³ with 8 corners × ⅛ = 1 atom.`,
+          bcc: `The primitive rhombohedron: |aᵢ| = (√3/2)a = ${len(Math.sqrt(3) / 2)} Å, 109.47° between each pair, volume a³/2 = ${vol(0.5)} Å³: 1 atom instead of 2. Part of it sticks out of the cube: a primitive cell need not fit inside the conventional one.`,
+          fcc: `The primitive rhombohedron: |aᵢ| = a/√2 = ${len(1 / Math.SQRT2)} Å, 60° between each pair, volume a³/4 = ${vol(0.25)} Å³: 1 atom instead of 4. Its corners are one cube corner, the six face centers and the opposite corner.`,
+          hcp: `The primitive cell is the rhombic prism a₁, a₂, c: volume (√3/2)a²c = ${vol(S.primitiveVolume)} Å³ with 8 corners × ⅛ + 1 inside = 2 atoms. Three of them make the hexagonal prism.`,
+        }[S.key],
         rh,
         cubeView,
+        { autoRotate: !fcc },
       );
-      step(
-        "Long diagonal",
-        "Its long diagonal runs along [111], from one cube corner to the opposite corner (1, 1, 1).",
-        { ...rh, diag: 1 },
-        cubeView,
-        { autoRotate: true },
+      if (fcc) {
+        step(
+          "Long diagonal",
+          "Its long diagonal runs along [111], from one cube corner to the opposite corner (1, 1, 1).",
+          { ...rh, diag: 1 },
+          cubeView,
+          { autoRotate: true },
+        );
+      }
+    }
+
+    if (JOURNEYS.includes(this.mode)) {
+      const { array, prim } = this.journey;
+      const lay = (value, keep = null) =>
+        Object.fromEntries(this.layers.map((j) => [`lay:${j}`, j === keep ? 1 : value]));
+      const apart = Object.fromEntries(this.layers.map((j) => [`off:${j}`, this.explode.get(j)]));
+      const ratio = S.cellAtoms / S.primitiveAtoms;
+      const arrayText =
+        S.cell === "cube" ? "a 3 × 3 × 3 block of cubes" : "a honeycomb of 7 prisms in 3 stories";
+      const up = [0, 0, 1];
+      const primView = this.fitView(
+        [...prim.corners, ...prim.atoms.map((atom) => atom.p)],
+        this.oblique,
+        up,
+        0.8,
       );
+      const conventionalView = this.fitView(cell.vertices, this.oblique, up, 0.8);
+      const blockView = this.fitView(
+        array.cells.flatMap((c) => c.vertices),
+        this.oblique,
+        up,
+        0.6,
+      );
+      // Seen from the side along the lattice rows t₁, slightly from above: each layer is a row.
+      const apartView = this.fitView(
+        this.journey.apart,
+        normalize(add(scale(this.e1, -1), scale(this.n, 0.1))),
+        this.n,
+      );
+      const oneView = this.fitView(this.journey.selected, this.n, this.e2);
+      const flatView = netView(2.1 * this.netRadius);
+
+      const vPrim = { ...this.base(), ...lay(1), pAtoms: 1, rhombo: 1, avec: 1 };
+      const vCell = { ...vPrim, cAtoms: 1, cube: 1, rhombo: 0.3, avec: 0.4 };
+      const vArray = { ...vCell, bAtoms: 1, grid: 1, rhombo: 0, avec: 0 };
+      const vSlice = { ...vArray, color: 1, plane: 1, grid: 0.35, cube: 0.5 };
+      const vApart = { ...vSlice, ...apart, plane: 0, grid: 0, cube: 0 };
+      const vOne = { ...vApart, ...lay(0.06, layer) };
+      const vNet = { ...vOne, ...lay(0, layer), nAtoms: 1, grow: 1, prim: 1, vec: 1 };
+      const primitiveText = `${S.vectorLabels.join(", ")} span the primitive cell, ${S.primitiveVolumeText} = ${vol(S.primitiveVolume)} Å³ with ${S.primitiveCountText}.`;
+      const conventionalText =
+        S.key === "sc"
+          ? `For simple cubic the conventional cube is the primitive cell itself: ${S.cellCountText} in a³ = ${vol(1)} Å³.`
+          : `The conventional ${cellName} shows the full ${S.hexagonal ? "hexagonal" : "cubic"} symmetry: ${S.cellCountText} in ${S.cellVolumeText} = ${vol(S.cellVolume)} Å³, the volume of ${ratio} primitive cells.`;
+      const netText = `an infinite ${typeName} net with ${cellText} and ${perCell} per cell`;
+
+      if (this.mode === "primToNet") {
+        step("Primitive cell", `${S.short}: ${primitiveText} ${primitiveNote}`, vPrim, primView);
+        step("Conventional cell", conventionalText, vCell, conventionalView);
+        step(
+          "3D array",
+          `Repeat the ${cellName} along its edges: ${arrayText} with ${this.journey.atoms} atoms. Every lattice point has the same surroundings.`,
+          vArray,
+          blockView,
+        );
+        step(
+          `Slice by (${H})`,
+          `The (${H}) planes cut the array into ${this.layers.length} parallel layers, ${spacing}. Colors mark the stacking registry: ${sequence}${sequence.endsWith("…") ? "" : "."}`,
+          vSlice,
+          blockView,
+        );
+        step(
+          "Layers apart",
+          `Pulled apart along ${along}, every layer is a flat 2D array of atoms. Stacked back with their in-plane shifts they rebuild the 3D crystal: ${sequence}, period N = ${g.period}.`,
+          vApart,
+          apartView,
+        );
+        step(
+          "One layer",
+          `Keep layer ${layer} and look straight down ${along}: one 2D array, with every distance true.`,
+          vOne,
+          oneView,
+        );
+        step(
+          "2D array",
+          `Repeat the layer in the plane: ${netText}; area ${f3(g.area * a * a)} Å².${fcc ? " Open it in the Surface net to measure and export." : ""}`,
+          vNet,
+          flatView,
+          { handoff: fcc },
+        );
+      } else {
+        step(
+          "2D array",
+          `Start from one (${H}) layer of ${S.short}: ${netText}.${reducedNote}`,
+          vNet,
+          flatView,
+        );
+        step(
+          "Stack the layers",
+          `Copies of the layer stack along ${along}, each one shifted in-plane: ${sequence}. The pattern repeats every N = ${g.period} layers.`,
+          vApart,
+          apartView,
+        );
+        step(
+          "3D array",
+          `Close the gaps (${g.evenlySpaced ? `d = ${len(g.d)} Å` : `${g.gaps.map(len).join(" and ")} Å in turn`}): the stacked 2D arrays are a 3D crystal, here ${this.journey.atoms} atoms.`,
+          { ...vSlice, plane: 0, grid: 0, cube: 0 },
+          blockView,
+        );
+        step(
+          "Repeating cells",
+          `The same block is ${arrayText}: each ${cellName} is a translated copy of the others.`,
+          vArray,
+          blockView,
+        );
+        step(
+          "Conventional cell",
+          `Keep one ${cellName}: ${S.cellCountText} in ${S.cellVolumeText} = ${vol(S.cellVolume)} Å³.`,
+          { ...vCell, rhombo: 0, avec: 0 },
+          conventionalView,
+        );
+        step(
+          "Primitive cell",
+          `The smallest repeating unit: ${primitiveText} ${primitiveNote}`,
+          { ...vPrim, cAtoms: 0.12, cube: 0.3 },
+          primView,
+          { autoRotate: true },
+        );
+      }
     }
 
     return steps;
@@ -1032,8 +1419,13 @@ export class CellNetAnimation {
   info(pending) {
     const index = pending ?? Math.round(this.position);
     const step = this.steps[index];
+    const shown = (j) =>
+      ["in", "out", "lay"].some((key) => (step.values[`${key}:${j}`] ?? 0) > 0.05);
+    const registries =
+      this.mode === "build" || (JOURNEYS.includes(this.mode) && step.values.color > 0.05);
     return {
       mode: this.mode,
+      structure: this.structure.key,
       step: index,
       total: this.steps.length,
       label: step.label,
@@ -1044,26 +1436,17 @@ export class CellNetAnimation {
       hkl: this.g.hkl,
       layer: this.layer,
       period: this.g.period,
-      ballsInCube: this.ballsInCube ?? null,
+      ballsInCell: this.ballsInCell ?? null,
+      atoms: this.journey?.atoms ?? null,
       captions: this.steps.map((s) => s.caption),
       // Overlays shown in this step, for the legend.
       visible: Object.entries(step.values)
         .filter(([key, value]) => !key.includes(":") && value > 0.05)
         .map(([key]) => key),
-      // Registry letters of the layers on screen (Build), with their colors.
-      letters:
-        this.mode === "build"
-          ? [
-              ...new Map(
-                this.layers
-                  .filter(
-                    (j) =>
-                      (step.values[`in:${j}`] ?? 0) > 0.05 || (step.values[`out:${j}`] ?? 0) > 0.05,
-                  )
-                  .map((j) => [layerLetter(j - this.layer, this.g.period), this.colorOf(j)]),
-              ),
-            ]
-          : [],
+      // Registry letters of the layers on screen (Build, and the colored journey steps).
+      letters: registries
+        ? [...new Map(this.layers.filter(shown).map((j) => [this.letterOf(j), this.colorOf(j)]))]
+        : [],
     };
   }
 

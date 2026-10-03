@@ -234,16 +234,16 @@ export const CONCEPTS = {
     title: "One crystal, two pictures.",
     question: "How do 3D cells and 2D nets fit together?",
     intro:
-      "Every Miller-plane family slices the crystal into identical atomic layers. Follow one conventional cube as it is cut into layers, flattened into a 2D net, and rebuilt by stacking shifted copies of that net.",
-    equation: "s = hX + kY + lZ;  d = Δs·a/|hkl|;  area × d = a³/4",
-    view: "The player under the view steps through the construction for the plane and occupied layer chosen in the surface panel. Captions use the current numbers. Back/Next or ←/→ move one step; the scrubber moves continuously.",
+      "Every Miller-plane family slices a crystal into identical atomic layers. Pick simple cubic, BCC, FCC or HCP and follow one conventional cell as it is cut into layers, flattened into a 2D net and rebuilt by stacking; or walk from the primitive cell to the conventional cell, the 3D array and one 2D layer, and back again.",
+    equation: "s = hX + kY + lZ;  d = Δs·a/|hkl|;  area × d = V_primitive (a³, a³/2, a³/4)",
+    view: "The player under the view chooses the structure and one of five animations, for the plane and occupied layer of the surface panel. HCP planes use hexagonal axes: (h k l) is written (h k i l) with i = −(h + k). Captions use the current numbers. Back/Next or ←/→ move one step; the scrubber moves continuously.",
     confusion:
-      "A shape cut out by the cube walls is not automatically a cell: the (111) triangle cannot tile the plane by translation. Stacked layers repeat only after N layers, where N·d is the shortest lattice vector along [hkl].",
-    try: "Run 3D cell → 2D net for (111), then 2D net → 3D cell for (110) and (210). Compare the stacking periods 3, 2 and 10.",
+      "A shape cut out by the cell walls is not automatically a cell: the (111) triangle cannot tile the plane by translation. Stacked layers repeat only after N layers, where N·d is the shortest lattice vector along the normal. In HCP the B atoms can form layers of their own between the A layers, so the spacings may alternate, as on the (10−10) prism planes.",
+    try: "Run 3D cell → 2D net for FCC (111), then BCC (110) and HCP (0001). Run Primitive → 3D → 2D for each structure and compare the atoms per cell: 1, 2, 4 and 6.",
     related: ["surface", "stacking", "primitive", "spacing"],
     refs: ["miller"],
     keywords:
-      "animation layers slice stack net 3d 2d deconstruct build primitive period shift cell",
+      "animation layers slice stack net 3d 2d deconstruct build primitive conventional array period shift cell sc bcc hcp simple cubic body centered hexagonal close packed",
   },
 };
 
@@ -259,6 +259,9 @@ export const LESSONS = [
   ["cellnet", "3D cell → 2D net", "animDeconstruct"],
   ["cellnet", "2D net → 3D cell", "animBuild"],
   ["cellnet", "Primitive cells, step by step", "animPrimitive"],
+  ["cellnet", "Primitive cell → 3D array → 2D layer", "animJourney"],
+  ["cellnet", "BCC: 2D layer → primitive cell", "animBcc"],
+  ["cellnet", "HCP: ABAB stacking", "animHcp"],
   ["stacking", "ABC stacking", "stacking"],
   ["neighbors", "Neighbors & coordination", "neighbors"],
   ["interstitials", "Interstitial sites", "interstitials"],
@@ -453,6 +456,44 @@ export const PRESETS = {
       hkl: [0, 0, 1],
       location: "layer",
       layer: 1,
+    },
+  },
+  animJourney: {
+    title: "Animate: primitive → 3D → 2D",
+    concept: "cellnet",
+    patch: {
+      topic: "surface",
+      workspace: "animation",
+      animMode: "primToNet",
+      hkl: [1, 1, 1],
+      location: "layer",
+      layer: 1,
+    },
+  },
+  animBcc: {
+    title: "Animate: BCC (110) → primitive",
+    concept: "cellnet",
+    patch: {
+      topic: "surface",
+      workspace: "animation",
+      animMode: "netToPrim",
+      animStructure: "bcc",
+      hkl: [1, 1, 0],
+      location: "layer",
+      layer: 1,
+    },
+  },
+  animHcp: {
+    title: "Animate: HCP ABAB stacking",
+    concept: "cellnet",
+    patch: {
+      topic: "surface",
+      workspace: "animation",
+      animMode: "build",
+      animStructure: "hcp",
+      hkl: [0, 0, 1],
+      location: "layer",
+      layer: 0,
     },
   },
 };

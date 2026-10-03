@@ -47,19 +47,36 @@ const result = await page.evaluate(async () => {
     const failed = api.verify().filter((check) => !check.pass);
     if (failed.length) failures.push(`${key}: ${failed.map((c) => c.name).join(", ")}`);
   }
-  // The three Cell ⇄ Net animations load for several planes.
-  for (const mode of ["deconstruct", "build", "primitive"]) {
-    for (const hkl of [
-      [0, 0, 1],
-      [1, 1, 1],
-      [2, 1, 0],
-    ]) {
-      api.setState({ topic: "surface", workspace: "animation", animMode: mode, hkl });
-      const info = api.animation();
-      if (!info || info.mode !== mode || info.total < 5) failures.push(`animation ${mode} ${hkl}`);
-      if (mode === "build" && info?.ballsInCube !== 14) failures.push(`build ${hkl}: 14 balls`);
+  // The five Cell ⇄ Net animations load for every structure and several planes, and the
+  // Build stack fills one cell with 8 / 9 / 14 / 17 balls.
+  const balls = { sc: 8, bcc: 9, fcc: 14, hcp: 17 };
+  for (const animStructure of Object.keys(balls)) {
+    for (const mode of ["deconstruct", "build", "primitive", "primToNet", "netToPrim"]) {
+      for (const hkl of [
+        [0, 0, 1],
+        [1, 1, 1],
+        [2, 1, 0],
+        [1, 0, 1],
+      ]) {
+        api.setState({
+          topic: "surface",
+          workspace: "animation",
+          animStructure,
+          animMode: mode,
+          hkl,
+        });
+        const info = api.animation();
+        const tag = `${animStructure} ${mode} ${hkl}`;
+        if (!info || info.mode !== mode || info.structure !== animStructure || info.total < 4)
+          failures.push(`animation ${tag}`);
+        if (mode === "build" && info?.ballsInCell !== balls[animStructure])
+          failures.push(`build ${tag}: ${info?.ballsInCell} balls`);
+        if (!document.querySelector("#anim-caption")?.textContent.trim())
+          failures.push(`caption ${tag}`);
+      }
     }
   }
+  api.setState({ animStructure: "fcc" });
   document.querySelector("#tour").click();
   const lessons = document.querySelector("#lessons progress").max;
   for (let i = 1; i < lessons; i++) document.querySelector(`#lessons [data-lesson="${i}"]`).click();

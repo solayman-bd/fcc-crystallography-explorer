@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   classifyCut,
-  cubeAround,
+  cellAround,
   layerGeometry,
   projectedSpots,
   reduceIndices,
@@ -15,7 +15,7 @@ import { surfaceCell } from "../src/crystal/surfaces.js";
 const close = (actual, expected, tol = 1e-9) =>
   assert.ok(
     Math.abs(actual - expected) <= tol * Math.max(1, Math.abs(expected)),
-    `${actual} ≠ ${expected}`,
+    `${actual} â‰  ${expected}`,
   );
 const sorted = (values) => [...values].sort((x, y) => x - y);
 
@@ -83,7 +83,7 @@ for (const row of TABLE) {
     close(g.area, row.area);
     assert.equal(g.period, row.N);
     assert.equal(g.type, row.type);
-    // Area per atom is 1 / planar density, and d × 4/a³ is the planar density.
+    // Area per atom is 1 / planar density, and d Ã— 4/aÂ³ is the planar density.
     close(g.area, 1 / surfaceCell(row.hkl).density);
     close(g.d * 4, g.density);
   });
@@ -105,11 +105,11 @@ test("period N: N interlayer shifts add up to a net vector, fewer do not", () =>
       g.shiftFractions.every((f) => Math.abs(j * f - Math.round(j * f)) < 1e-7);
     assert.ok(integral(g.period), hkl.join(" "));
     for (let j = 1; j < g.period; j++) assert.ok(!integral(j), `${hkl.join(" ")} j=${j}`);
-    close(g.period * g.d, g.repeat); // N·d is the shortest lattice vector along the normal
+    close(g.period * g.d, g.repeat); // NÂ·d is the shortest lattice vector along the normal
   }
 });
 
-test("(1 −1 0) behaves like (110); (002) reduces to (001)", () => {
+test("(1 âˆ’1 0) behaves like (110); (002) reduces to (001)", () => {
   const a = layerGeometry([1, -1, 0]);
   const b = layerGeometry([1, 1, 0]);
   for (const key of ["d", "area", "period", "angle", "type"]) assert.equal(a[key], b[key], key);
@@ -120,7 +120,7 @@ test("(1 −1 0) behaves like (110); (002) reduces to (001)", () => {
   assert.throws(() => reduceIndices([0, 0, 0]));
 });
 
-test("centered cells: a × a for (001), a/√2 × a√(3/2) for (111), none for (110)", () => {
+test("centered cells: a Ã— a for (001), a/âˆš2 Ã— aâˆš(3/2) for (111), none for (110)", () => {
   const c001 = layerGeometry([0, 0, 1]).centered;
   assert.deepEqual(
     sorted([norm(c001.u), norm(c001.v)]).map((v) => +v.toFixed(9)),
@@ -142,7 +142,7 @@ test("the cube cut by the selected layer", () => {
     [[1, 1, 0], 2, "rectangle", true, 5, [2, 2, 6, 2, 2], 8],
   ]) {
     const g = layerGeometry(hkl);
-    const cube = cubeAround(g, layer);
+    const cube = cellAround(g, layer);
     assert.equal(cube.balls.length, 14);
     assert.equal(cube.layers.length, layers);
     assert.deepEqual(
@@ -167,7 +167,7 @@ test("any selected layer cuts through the cube, including far-away layers", () =
   ]) {
     const g = layerGeometry(hkl);
     for (const layer of [-7, -1, 0, 1, 2, 9, 40]) {
-      const cube = cubeAround(g, layer);
+      const cube = cellAround(g, layer);
       assert.ok(cube.layers.includes(layer), `${hkl.join(" ")} layer ${layer}`);
       assert.ok(isLatticeTranslation(cube.origin));
       const slice = cube.slices.find((s) => s.layer === layer);
@@ -195,7 +195,7 @@ test("Build mode: the stack fills one conventional cube with exactly 14 balls", 
     const g = layerGeometry(hkl);
     for (const layer of [0, 1, 3]) {
       const plan = stackPlan(g, layer);
-      const inside = plan.points.filter((point) => point.inCube);
+      const inside = plan.points.filter((point) => point.inCell);
       assert.equal(inside.length, 14, `${hkl.join(" ")} layer ${layer}`);
       for (const point of plan.points) assert.ok(isLatticeTranslation(point.p));
     }
@@ -219,7 +219,7 @@ test("the interlayer shift is the shortest in-plane offset to the next layer", (
       }
     }
   }
-  close(norm(layerGeometry([1, 1, 1]).shift), 1 / Math.sqrt(6)); // a/√6 for ABC stacking
+  close(norm(layerGeometry([1, 1, 1]).shift), 1 / Math.sqrt(6)); // a/âˆš6 for ABC stacking
 });
 
 test("stacked layers sit d apart along the normal and shift by the interlayer vector", () => {

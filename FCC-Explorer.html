@@ -625,6 +625,23 @@ h1 {
   font-size: 10px;
   color: #809ba9;
 }
+/* Panels under the view keep their full height; the 3D stage gives up space instead. */
+#stats,
+#inspector,
+#player,
+#sequence {
+  flex-shrink: 0;
+}
+@media (max-height: 820px) {
+  .stage {
+    min-height: 260px;
+  }
+}
+@media (max-height: 680px) {
+  .stage {
+    min-height: 220px;
+  }
+}
 #inspector {
   margin-top: 5px;
   border: 1px solid var(--line);

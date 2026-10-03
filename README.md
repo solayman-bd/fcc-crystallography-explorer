@@ -12,6 +12,8 @@ An interactive 3D lab for the face-centered cubic (FCC) crystal: unit cells, Mil
 ![No install](https://img.shields.io/badge/install-none-lightgrey)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/solayman-bd/fcc-crystallography-explorer/blob/main/FCC-Explorer-Colab.ipynb)
 
+**[▶ Try the live demo](https://solayman-bd.github.io/fcc-crystallography-explorer/FCC-Explorer.html)**
+
 ![FCC Explorer showing the conventional FCC cell](docs/screenshots/crystal-cell.png)
 
 </div>
@@ -23,6 +25,10 @@ Textbook pictures of FCC are easy to misread. "4 atoms" and "14 balls" are both 
 I wrote these points down in my notes, [*Crystal planes in cubic cells: how to see and slice them*](Crystal%20planes%20in%20cubic%20cells%20how%20to%20see%20and%20slice%20them.pdf). Then I built this app so I could set up each object exactly, turn it around, click any atom and check the numbers against the derivation.
 
 ## Quick start
+
+### Option 0: use it online
+
+Open the **[live demo](https://solayman-bd.github.io/fcc-crystallography-explorer/FCC-Explorer.html)**. It's the same single file, served by GitHub Pages; everything still runs in your browser.
 
 ### Option 1: in your browser (offline)
 
@@ -132,6 +138,7 @@ The **Verify** tab recomputes 19 invariants for your current settings, including
 ```
 ├── FCC-Explorer.html              # Ready-to-run app: one self-contained file, works offline
 ├── FCC-Explorer-Colab.ipynb       # The same app inside a Colab/Jupyter notebook
+├── index.html                     # Sends GitHub Pages visitors to the app
 ├── src/                           # Source code (see "Project structure" below)
 ├── tests/                         # Unit tests and a browser smoke test
 ├── build.mjs                      # Bundles src/ into one offline HTML file

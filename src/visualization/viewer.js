@@ -47,6 +47,7 @@ import {
   dot,
   formatNumber,
   formatVector,
+  gcdOf,
   mod,
   norm,
   normalize,
@@ -57,12 +58,14 @@ import {
   extendedPlaneQuad,
   planeBoxPolygon,
   planeLevel,
+  planeInfo,
   planeLevelsInBox,
 } from "../crystal/planes.js";
 import { isAllowedReflection, reciprocalPoints } from "../crystal/reciprocal.js";
 import { SHOCKLEY_EXAMPLE, slipSystems } from "../crystal/slip.js";
 import { buildStack } from "../crystal/stacking.js";
 import { layerOffset, surfaceCell, surfaceNet } from "../crystal/surfaces.js";
+import { CellNetAnimation } from "./cell-net.js";
 import { cappedSphereGeometry, polygonGeometry } from "./geometry.js";
 
 export const toVector3 = (point) => new Vector3(...point);
@@ -98,6 +101,8 @@ export class CrystalViewer {
     this.labels = [];
     this.dirty = true;
     this.raycaster = new Raycaster();
+    this.cellNet = null;
+    this.drawn = { highlighted: false, planes: 0, comparison: false };
     this.setCamera("orthographic");
     new ResizeObserver(() => this.resize()).observe(host);
     let downAt;
@@ -139,14 +144,20 @@ export class CrystalViewer {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.12;
     this.controls.addEventListener("change", () => (this.dirty = true));
+    this.controls.addEventListener("start", () => this.cellNet?.userInteracted());
     this.resize();
   }
 
   resize() {
     const width = Math.max(100, this.host.clientWidth);
     const height = Math.max(100, this.host.clientHeight);
-    const aspect = width / height;
     this.renderer.setSize(width, height, false);
+    this.updateFrustum();
+  }
+
+  /** Apply `span` and the canvas aspect ratio to the camera. */
+  updateFrustum() {
+    const aspect = Math.max(100, this.host.clientWidth) / Math.max(100, this.host.clientHeight);
 
     if (this.kind === "orthographic") {
       this.camera.left = (-this.span * aspect) / 2;
@@ -226,6 +237,14 @@ export class CrystalViewer {
       return;
     }
 
+    const sprite = this.makeLabel(text, color, size);
+    sprite.position.copy(toVector3(position));
+    this.group.add(sprite);
+    this.labels.push(sprite);
+  }
+
+  /** A label sprite that is not yet placed in the scene. */
+  makeLabel(text, color = "#31546a", size = 0.18) {
     const canvas = document.createElement("canvas");
     canvas.width = 512;
     canvas.height = 96;
@@ -243,20 +262,19 @@ export class CrystalViewer {
     const sprite = new Sprite(
       new SpriteMaterial({ map: new CanvasTexture(canvas), depthTest: false }),
     );
-    sprite.position.copy(toVector3(position));
     sprite.userData.labelScale = size;
     sprite.renderOrder = 10;
-    this.group.add(sprite);
-    this.labels.push(sprite);
+    return sprite;
   }
 
   updateLabels() {
     this.camera.updateMatrixWorld();
     const viewHeight = Math.max(this.host.clientHeight, 100);
+    const world = new Vector3();
 
-    for (const sprite of this.labels) {
+    for (const sprite of [...this.labels, ...(this.cellNet?.labels ?? [])]) {
       const depth = Math.abs(
-        sprite.position.clone().applyMatrix4(this.camera.matrixWorldInverse).z,
+        sprite.getWorldPosition(world).applyMatrix4(this.camera.matrixWorldInverse).z,
       );
       const unitsPerPixel =
         this.kind === "orthographic"
@@ -388,9 +406,23 @@ export class CrystalViewer {
     this.clear();
     this.messages = [];
     this.count = 0;
+    this.drawn = { highlighted: false, planes: 0, comparison: false };
 
-    if (this.kind !== state.camera) {
+    if (state.workspace !== "animation" && this.cellNet) {
+      this.disposeAnimation();
+      fit = true;
+    }
+
+    const cameraChanged = this.kind !== state.camera;
+
+    if (cameraChanged) {
       this.setCamera(state.camera);
+    }
+
+    if (state.workspace === "animation") {
+      this.animationScene(state, cameraChanged);
+      this.resize();
+      return;
     }
 
     if (state.workspace === "stacking") {
@@ -406,6 +438,62 @@ export class CrystalViewer {
     }
 
     this.resize();
+    this.dirty = true;
+  }
+
+  /**
+   * The "3D cell ⇄ 2D net" animation for the plane and occupied layer of the surface panel.
+   * It is rebuilt (and restarted) only when the plane, layer, mode or appearance changes.
+   */
+  animationScene(state, cameraChanged = false) {
+    const step = planeInfo(state.hkl).step;
+    const layer = Math.round(
+      planeLevel(state.hkl, state.N, state.location, state.c, state.layer) / step,
+    );
+    const key = JSON.stringify([
+      state.animMode,
+      state.hkl.map((value) => value / gcdOf(state.hkl)),
+      layer,
+      state.a,
+      state.radiusMode,
+      state.radius,
+      state.quality,
+      state.color,
+      state.colorA,
+      state.colorB,
+      state.colorC,
+      state.planeColor,
+      state.dirColor,
+      state.surfaceColor,
+    ]);
+
+    if (this.cellNet?.key === key) {
+      this.cellNet.setSpeed(state.animSpeed);
+
+      if (cameraChanged) {
+        this.cellNet.refresh();
+      }
+      return;
+    }
+
+    const wasPlaying = this.cellNet?.playing;
+    this.cellNet?.dispose();
+    this.cellNet = new CellNetAnimation(this, state, layer);
+    this.cellNet.key = key;
+    this.cellNet.onChange((info) => this.onAnimation?.(info));
+    this.cellNet.notify();
+
+    if (wasPlaying) {
+      this.cellNet.play();
+    }
+  }
+
+  /** Stop and remove the animation (when leaving its workspace). */
+  disposeAnimation() {
+    if (!this.cellNet) return;
+    this.cellNet.dispose();
+    this.cellNet = null;
+    this.camera.up.set(0, 0, 1);
     this.dirty = true;
   }
 
@@ -438,6 +526,11 @@ export class CrystalViewer {
     }
 
     this.count = sites.length;
+    this.drawn.highlighted =
+      state.atoms &&
+      state.plane &&
+      state.highlight &&
+      sites.some((site) => Math.abs(dot(site.p, state.hkl) - level) < 1e-7);
     this.center.copy(toVector3(center));
     const neighbors = state.neighbors ? neighborShells(host, state.shell, state.cutoff) : [];
     const neighborKeys = new Set(neighbors.map((neighbor) => formatVector(neighbor.p, 8)));
@@ -605,16 +698,17 @@ export class CrystalViewer {
         }
       }
 
+      const missing = [];
+
       for (const plane of planes) {
         const polygon = planePolygon(plane.n, plane.c);
 
         if (!polygon.length) {
-          this.messages.push(
-            "A selected plane has no 2D intersection with this box. Extend it or change its location.",
-          );
+          missing.push(plane);
           continue;
         }
 
+        this.drawn.planes++;
         this.polygon(
           polygon,
           plane.color,
@@ -629,6 +723,21 @@ export class CrystalViewer {
             0.14,
           );
         }
+      }
+
+      // Parallel and atomic sets include layers that only touch a corner; that is expected.
+      if (state.planeSet === "one" && missing.length) {
+        this.messages.push(
+          `The (${formatVector(state.hkl)}) plane at c=${formatNumber(level)} does not cut through this box. Extend it or change its location.`,
+        );
+      } else if (state.planeSet === "symmetry" && missing.length) {
+        this.messages.push(
+          `${missing.map((plane) => `(${formatVector(plane.n)})`).join(", ")} ${missing.length > 1 ? "do" : "does"} not cut through this box at this location; the other family members are drawn.`,
+        );
+      } else if (!this.drawn.planes) {
+        this.messages.push(
+          "No plane of this set cuts through the box. Extend the planes or change the box.",
+        );
       }
     }
 
@@ -682,6 +791,7 @@ export class CrystalViewer {
         planeLevel(state.hkl2, state.N, state.location, state.c, state.layer),
       );
       this.polygon(polygon, state.surfaceColor, state.planeOpacity);
+      this.drawn.comparison = polygon.length >= 3;
 
       if (polygon.length && state.planeLabels) {
         this.label(
@@ -1000,6 +1110,11 @@ export class CrystalViewer {
 
   /** Frame everything drawn except labels. */
   fit() {
+    if (this.cellNet) {
+      this.cellNet.refit();
+      return;
+    }
+
     const bounds = new Box3();
 
     for (const child of this.group.children) {

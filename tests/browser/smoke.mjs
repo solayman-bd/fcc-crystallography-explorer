@@ -47,9 +47,24 @@ const result = await page.evaluate(async () => {
     const failed = api.verify().filter((check) => !check.pass);
     if (failed.length) failures.push(`${key}: ${failed.map((c) => c.name).join(", ")}`);
   }
+  // The three Cell ⇄ Net animations load for several planes.
+  for (const mode of ["deconstruct", "build", "primitive"]) {
+    for (const hkl of [
+      [0, 0, 1],
+      [1, 1, 1],
+      [2, 1, 0],
+    ]) {
+      api.setState({ topic: "surface", workspace: "animation", animMode: mode, hkl });
+      const info = api.animation();
+      if (!info || info.mode !== mode || info.total < 5) failures.push(`animation ${mode} ${hkl}`);
+      if (mode === "build" && info?.ballsInCube !== 14) failures.push(`build ${hkl}: 14 balls`);
+    }
+  }
   document.querySelector("#tour").click();
-  for (let i = 1; i < 12; i++) document.querySelector(`#lessons [data-lesson="${i}"]`).click();
-  if (api.getState().lesson !== 11) failures.push("guided tour did not reach lesson 12");
+  const lessons = document.querySelector("#lessons progress").max;
+  for (let i = 1; i < lessons; i++) document.querySelector(`#lessons [data-lesson="${i}"]`).click();
+  if (api.getState().lesson !== lessons - 1)
+    failures.push(`guided tour did not reach lesson ${lessons}`);
   const xyz = api.structure("xyz").trim().split("\n");
   if (Number(xyz[0]) !== 4 * api.getState().N.reduce((a, b) => a * b))
     failures.push("XYZ atom count");

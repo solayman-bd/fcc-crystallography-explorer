@@ -117,11 +117,18 @@ test("calculation report includes the configuration and passing checks", () => {
 });
 
 test("teaching content is consistent", () => {
-  assert.equal(LESSONS.length, 12);
+  assert.equal(LESSONS.length, 15);
   for (const [concept, , preset] of LESSONS) {
     assert.ok(CONCEPTS[concept], concept);
     assert.ok(PRESETS[preset], preset);
   }
+  // Every animation mode has a guided-tour lesson.
+  const modes = LESSONS.map(([, , preset]) => PRESETS[preset].patch.animMode).filter(Boolean);
+  assert.deepEqual(modes.sort(), ["build", "deconstruct", "primitive"]);
+  // A saved view from before the animation existed still loads.
+  const { animMode, animSpeed, ...older } = DEFAULT_STATE;
+  assert.equal(validateState(older).animMode, "deconstruct");
+  assert.throws(() => validateState({ ...DEFAULT_STATE, animSpeed: 3 }));
   for (const [, , concept] of TOPICS) assert.ok(CONCEPTS[concept]);
   for (const [key, concept] of Object.entries(CONCEPTS)) {
     for (const related of concept.related) assert.ok(CONCEPTS[related], `${key} → ${related}`);

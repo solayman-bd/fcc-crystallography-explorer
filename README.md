@@ -61,20 +61,32 @@ The app is organized into seven topics:
 |---|---|
 | **Crystal & unit cells** | See the 14 visible sites vs. 4 periodic atoms. Switch between closed, unique and ghost drawings. Cut boundary atoms into capped half, quarter and eighth spheres. Build supercells up to 10×10×10. Overlay the primitive cell, tile it, or show the Wigner–Seitz cell. |
 | **Directions & planes** | Enter any `[uvw]` or `(hkl)` from −24 to 24. Place a plane canonically, at the origin, centered, translated or on an occupied atomic layer. Show symmetry families and parallel sets. Add a second plane or direction to check angles and the zone law. |
-| **Surface crystallography** | Get the exact 2D primitive surface cell for any `(hkl)`. View one occupied atomic layer as an analytic 2D net with lengths, angle, area and planar density. |
+| **Surface crystallography** | Get the exact 2D primitive surface cell for any `(hkl)`. View one occupied atomic layer as an analytic 2D net with lengths, angle, area and planar density. Watch the 3D cell turn into the 2D net and back (see below). |
 | **Atomic stacking** | Compare FCC ABC, HCP ABAB and AAA stacking. Step through intrinsic and extrinsic fault and twin sequences. Filter registries and switch between side and normal views. |
 | **Local environment** | Show neighbor shells (12, 6, 24), including atoms outside the drawn box. Show the cuboctahedron. Find octahedral and tetrahedral holes, their hosts and radius ratios. |
 | **Slip & Burgers vectors** | Explore all twelve {111}⟨110⟩ slip systems and their Burgers vectors. Compute Schmid factors for any loading direction. See how a perfect vector splits into Shockley partials. |
 | **Reciprocal & diffraction** | View the BCC reciprocal lattice. See why mixed-parity reflections vanish. Compute the structure factor, \|G\|, d and Bragg 2θ for any wavelength (default Cu Kα, 1.5406 Å). |
 
-### Four workspaces
+### Five workspaces
 
-**Crystal (3D)**, **Surface net (2D)**, **Stacking (3D)** and **Reciprocal (3D)**. Each 3D view has orthographic and perspective cameras, one-click views along [100], [110], [111] and other directions, and an "align to plane normal" button.
+**Crystal (3D)**, **Surface net (2D)**, **Cell ⇄ Net (3D)**, **Stacking (3D)** and **Reciprocal (3D)**. Each 3D view has orthographic and perspective cameras, one-click views along [100], [110], [111] and other directions, and an "align to plane normal" button.
+
+### Animated: 3D cell ⇄ 2D net
+
+Pick any plane in the **Surface crystallography** panel, then press one of the three animation buttons (or open the **Cell ⇄ Net** tab). A player under the view steps through the construction. Every caption is filled from the geometry of your plane, layer and lattice parameter.
+
+| Mode | What it shows |
+|---|---|
+| **3D cell → 2D net** | The conventional cube with 14 balls → the plane cutting it → every layer colored, with d → the view along [hkl] ("picture B", e.g. 13 spots for 14 balls in (111)) → one layer with true distances ("picture A") → the layer grown into an infinite net → why the cube cut is or isn't a cell → the primitive and centered cells → the same orientation as the Surface net 2D view. |
+| **2D net → 3D cell** | One layer → the next layer dropping in, shifted onto the gaps → stacking until the registry repeats (ABAB for (001) and (110), ABC for (111), period N in general) → a side view with d and the shift → back to the cube axes, where exactly 14 balls fill one conventional cube. |
+| **Primitive cells** | The centered 2D cell morphing into the primitive cell (area halves, 2 atoms → 1), then the cube's a₁, a₂, a₃ and the primitive rhombohedron (a/√2, 60°, a³/4, 1 atom), with its long diagonal along [111]. |
+
+It works for every `(hkl)`: the layer spacing, net, interlayer shift and stacking period are computed, never hard-coded. Controls: Back / Next (or ←/→), Play/Pause, Replay, a timeline scrubber and speed (0.5×, 1×, 2×). It respects your system's reduced-motion setting.
 
 ### Built for learning
 
-- **Guided tour** with 12 lessons: conventional FCC cell → counting shared atoms → 3D primitive cell → directions & translations → Miller planes → low-index surfaces → 2D primitive cells → ABC stacking → neighbors & coordination → interstitial sites → slip systems → reciprocal space & diffraction.
-- **15 presets**, such as *The (111) plane*, *FCC (110)*, *Twelve nearest neighbors* and *Shockley partial vectors*.
+- **Guided tour** with 15 lessons: conventional FCC cell → counting shared atoms → 3D primitive cell → directions & translations → Miller planes → low-index surfaces → 2D primitive cells → 3D cell → 2D net → 2D net → 3D cell → primitive cells, step by step → ABC stacking → neighbors & coordination → interstitial sites → slip systems → reciprocal space & diffraction.
+- **18 presets**, such as *The (111) plane*, *FCC (110)*, *Twelve nearest neighbors*, *Shockley partial vectors* and the three animations.
 - **Four side tabs**:
   - **Learn**: the idea, the equation, how to read the drawing and a common misconception.
   - **Calculate**: the derived values for your current settings.
@@ -89,9 +101,13 @@ The app is organized into seven topics:
 |---|---|
 | ![(111) plane with highlighted member atoms and normal](docs/screenshots/plane-111.png) | ![Triangular (111) surface net with primitive cell t1, t2](docs/screenshots/surface-net-111.png) |
 
-| ABC stacking along [111] |
-|---|
-| ![FCC ABCABC stacking with A, B and C registries colored](docs/screenshots/stacking-abc.png) |
+| ABC stacking along [111] | The (001) net: primitive cell vs. the a × a cube face |
+|---|---|
+| ![FCC ABCABC stacking with A, B and C registries colored](docs/screenshots/stacking-abc.png) | ![FCC (001) net with the primitive cell and the conventional a by a cell marked](docs/screenshots/fcc%20100%20pnae%202d%20primitive%20view.png) |
+
+| Cell ⇄ Net: the (111) layers inside one cube | Cell ⇄ Net: (111) layers stacking ABCA, side view |
+|---|---|
+| ![The conventional cube with its four (111) layers colored and sliced](docs/screenshots/cell-net-layers-111.png) | ![Side view of stacked (111) layers A, B, C, A with the layer spacing d marked](docs/screenshots/cell-net-stacking-111.png) |
 
 ## Key numbers it shows
 
@@ -112,7 +128,7 @@ With the default lattice parameter **a = 4.05 Å** (editable):
 
 ### Checked live in the app
 
-The **Verify** tab recomputes 19 invariants for your current settings, including:
+The **Verify** tab recomputes 22 invariants for your current settings, including:
 
 - 4 unique atoms and 14 visible sites
 - primitive volume a³/4
@@ -122,6 +138,7 @@ The **Verify** tab recomputes 19 invariants for your current settings, including
 - 12 distinct slip systems, all Schmid factors ≤ 0.5
 - (111) allowed and (100) absent
 - reciprocal duality error ≈ 0
+- for the current plane: stacking period N × d = the shortest lattice vector along [hkl], d × 4/a³ = planar density, and exactly 14 stacked balls in one cube
 
 ## Save, load and export
 
@@ -167,6 +184,7 @@ src/
 │   ├── lattice.js           #   FCC sites, primitive cell, directions, metrics
 │   ├── planes.js            #   located Miller planes, spacings, plane/box intersection
 │   ├── surfaces.js          #   exact 2D primitive surface cells (integer kernel + Gauss reduction)
+│   ├── layers.js            #   layer spacing, net type, interlayer shift, stacking period, cube cuts
 │   ├── environment.js       #   neighbor shells, interstitial holes, Wigner–Seitz cell
 │   ├── slip.js              #   12 slip systems, Schmid factors, Shockley partials
 │   ├── stacking.js          #   ABC / ABAB / AAA and fault/twin sequences
@@ -175,6 +193,7 @@ src/
 ├── visualization/
 │   ├── geometry.js          #   capped boundary spheres, polygon meshes
 │   ├── viewer.js            #   Three.js 3D viewer with picking
+│   ├── cell-net.js          #   the "3D cell ⇄ 2D net" animation (steps, tweens, captions)
 │   └── surface-view.js      #   analytic SVG view of one atomic layer
 ├── education/concepts.js    # Explanations, guided tour, presets, references
 ├── index.html               # Page template
@@ -197,6 +216,16 @@ npm run serve          # optional: serve the build on localhost
 ```
 
 The unit tests check the identities the app relies on: 4 atoms per cell with 14 visible sites, primitive volume a³/4, the three different plane spacings, a primitive surface cell (area × layer gap = a³/4) for all 2,196 signed index triples within ±6, neighbor shells of 12/6/24, hole hosts, the 12 slip systems and their Schmid factors, ABC stacking mapping back onto the cubic lattice, reciprocal duality, the FCC selection rule, capped-sphere volumes of ½, ¼ and ⅛, settings validation and export atom counts.
+
+For the Cell ⇄ Net animation they check this table, plus: N interlayer shifts (and no fewer) add up to a net vector, (1 −1 0) behaves like (110), (002) reduces to (001), and the stacked layers put exactly 14 balls in one cube for every plane tested.
+
+| (hkl) | d | Primitive net | Area per atom | Period N |
+|---|---|---|---|---|
+| (001) | a/2 | a/√2, a/√2, 90° | a²/2 | 2 |
+| (110) | a/(2√2) | a/√2, a, 90° | a²/√2 | 2 |
+| (111) | a/√3 | a/√2, a/√2, 60° | √3a²/4 | 3 |
+| (112) | a/(2√6) | a/√2, a√3, 90° | a²√(3/2) | 6 |
+| (210) | a/(2√5) | a, a√(3/2), 65.9° | a²√5/2 | 10 |
 
 When you're happy with a change, copy `dist/FCC-Explorer.html` and `dist/FCC-Explorer-Colab.ipynb` over the files in the repository root.
 

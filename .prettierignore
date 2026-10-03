@@ -1,3 +1,7 @@
 # The page template's whitespace is reproduced exactly in the built HTML.
 src/index.html
+# Build output and the released single-file app.
 dist/
+FCC-Explorer.html
+# Hand-written documentation.
+*.md

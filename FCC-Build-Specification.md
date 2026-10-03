@@ -59,6 +59,20 @@ The app has robust instanced-mesh picking, orthographic/perspective cameras, sta
 
 Every concept explains what it means, its defining equation, what the drawing shows, a common misconception, the current numerical values, a useful experiment, related concepts and authoritative reading. The app has concept search, at least twelve guided lessons, useful presets, JSON save/load including the camera, and error messages for invalid input that keep the previous valid scene.
 
+## Later addition: 3D cell ⇄ 2D net animation
+
+I added a guided, step-by-step animation tied to the "A single atomic layer" panel. It works for every (hkl) the panel accepts, and it computes everything per plane, with nothing hard-coded: the reduced indices, the layer step Δs = gcd(k+l, h+l, h+k)/2, the spacing d = Δs·a/|hkl|, the Gauss-reduced primitive net t1, t2, the centered cell when the net has one, the shortest interlayer shift, the stacking period N (with N·d the shortest lattice vector along [hkl]), A/B/C… layer labels, and the cube-cut polygon of each layer. The in-plane frame e1 = t1/|t1|, e2 = n × e1 is the Surface net frame, so the animation hands off to the 2D view in the same orientation.
+
+Three modes, each a list of steps:
+
+1. **3D cell → 2D net**: cube with 14 balls, the plane and its cube cut, every layer colored with its slice, the view along n ("picture B"), one layer ("picture A"), the layer grown into a net, whether the cube cut is a cell, the primitive and centered cells with live numbers, then the flat Surface net view.
+2. **2D net → 3D cell**: one net, the next layer dropping in shifted onto the gaps, stacking to N + 1 layers, a side view showing d and the shift, then the cube axes, where exactly 14 balls fill one conventional cube.
+3. **Primitive cells**: the centered 2D cell morphing into the primitive one, then a1, a2, a3 and the primitive rhombohedron (a/√2, 60°, a³/4, 1 atom) with its long diagonal along [111].
+
+Each step is a set of numbers (opacities, offsets along n, morph and growth amounts) plus a camera view; I tween between them over 1100 ms with easeInOutQuad. Captions are templates filled from the computed geometry. The controls are a mode selector, Back/Next, Play/Pause, Replay, a scrubber, speed 0.5×/1×/2× and the ←/→ keys. Changing (hkl) or the layer restarts the mode. Dragging works between tweens and stops auto-rotation. Reduced-motion settings jump straight to end states. Leaving the workspace cancels all timers. Each mode is a lesson in the guided tour.
+
+My acceptance checks: d, the primitive net, the area per atom and N for (001), (110), (111), (112) and (210); area per atom = 1/(planar density) and d × 4/a³ = planar density; exactly 14 balls in the cube in Build mode for every (hkl); (1 −1 0) = (110) and (002) → (001); and the existing tabs, exports, Save/Load and the tour still work.
+
 ## Output rules
 
 - PNG exports the current view. SVG exports the analytic surface net.

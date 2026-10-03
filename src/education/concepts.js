@@ -129,7 +129,8 @@ export const CONCEPTS = {
     try: "Compare (001), (110), (111) and (210). Calculate shows the actual integer basis; Verify checks primitivity.",
     related: ["planes", "primitive", "packing", "stacking"],
     refs: ["miller"],
-    keywords: "surface 2d net planar density primitive square rectangle triangle rhombus",
+    keywords:
+      "surface 2d net planar density primitive square rectangle triangle rhombus (001) (110) (111)",
   },
   packing: {
     title: "Touching along a face diagonal.",
@@ -229,9 +230,24 @@ export const CONCEPTS = {
     refs: ["reciprocal", "diffraction"],
     keywords: "reciprocal diffraction xrd bcc bragg selection forbidden allowed structure factor",
   },
+  cellnet: {
+    title: "One crystal, two pictures.",
+    question: "How do 3D cells and 2D nets fit together?",
+    intro:
+      "Every Miller-plane family slices the crystal into identical atomic layers. Follow one conventional cube as it is cut into layers, flattened into a 2D net, and rebuilt by stacking shifted copies of that net.",
+    equation: "s = hX + kY + lZ;  d = Δs·a/|hkl|;  area × d = a³/4",
+    view: "The player under the view steps through the construction for the plane and occupied layer chosen in the surface panel. Captions use the current numbers. Back/Next or ←/→ move one step; the scrubber moves continuously.",
+    confusion:
+      "A shape cut out by the cube walls is not automatically a cell: the (111) triangle cannot tile the plane by translation. Stacked layers repeat only after N layers, where N·d is the shortest lattice vector along [hkl].",
+    try: "Run 3D cell → 2D net for (111), then 2D net → 3D cell for (110) and (210). Compare the stacking periods 3, 2 and 10.",
+    related: ["surface", "stacking", "primitive", "spacing"],
+    refs: ["miller"],
+    keywords:
+      "animation layers slice stack net 3d 2d deconstruct build primitive period shift cell",
+  },
 };
 
-/** The 12-step guided tour: [concept, title, preset]. */
+/** The guided tour: [concept, title, preset]. */
 export const LESSONS = [
   ["crystal", "Conventional FCC cell", "basic"],
   ["crystal", "Counting shared atoms", "counting"],
@@ -240,6 +256,9 @@ export const LESSONS = [
   ["planes", "Miller planes", "planes"],
   ["surface", "Low-index surfaces", "surface001"],
   ["surface", "2D primitive cells", "surface111"],
+  ["cellnet", "3D cell → 2D net", "animDeconstruct"],
+  ["cellnet", "2D net → 3D cell", "animBuild"],
+  ["cellnet", "Primitive cells, step by step", "animPrimitive"],
   ["stacking", "ABC stacking", "stacking"],
   ["neighbors", "Neighbors & coordination", "neighbors"],
   ["interstitials", "Interstitial sites", "interstitials"],
@@ -268,6 +287,7 @@ export const CONCEPT_TOPICS = {
   spacing: "geometry",
   surface: "surface",
   packing: "surface",
+  cellnet: "surface",
   stacking: "stacking",
   neighbors: "environment",
   interstitials: "environment",
@@ -398,5 +418,41 @@ export const PRESETS = {
     title: "FCC diffraction",
     concept: "reciprocal",
     patch: { topic: "reciprocal", workspace: "reciprocal", forbidden: true },
+  },
+  animDeconstruct: {
+    title: "Animate: 3D cell → 2D net",
+    concept: "cellnet",
+    patch: {
+      topic: "surface",
+      workspace: "animation",
+      animMode: "deconstruct",
+      hkl: [1, 1, 1],
+      location: "layer",
+      layer: 1,
+    },
+  },
+  animBuild: {
+    title: "Animate: 2D net → 3D cell",
+    concept: "cellnet",
+    patch: {
+      topic: "surface",
+      workspace: "animation",
+      animMode: "build",
+      hkl: [1, 1, 1],
+      location: "layer",
+      layer: 0,
+    },
+  },
+  animPrimitive: {
+    title: "Animate: primitive cells",
+    concept: "cellnet",
+    patch: {
+      topic: "surface",
+      workspace: "animation",
+      animMode: "primitive",
+      hkl: [0, 0, 1],
+      location: "layer",
+      layer: 1,
+    },
   },
 };

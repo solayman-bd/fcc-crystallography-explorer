@@ -2,6 +2,7 @@
  * Analytic 2D view of one occupied atomic layer, drawn as SVG.
  */
 
+import { layerGeometry } from "../crystal/layers.js";
 import { add, dot, formatNumber, formatVector, scale, subtract } from "../crystal/math.js";
 import { planeInfo, planeLevel } from "../crystal/planes.js";
 import { cubicMeshVectors, layerOffset, surfaceCell, surfaceNet } from "../crystal/surfaces.js";
@@ -156,13 +157,13 @@ export class SurfaceView {
         const start = project([0, 0, 0]);
         const end = project(vector);
         parts.push(
-          `<line x1="${start[0]}" y1="${start[1]}" x2="${end[0]}" y2="${end[1]}" stroke="${state.surfaceColor}" stroke-width="3" marker-end="url(#arr)"/><text x="${end[0] + 10}" y="${end[1] - 10}" font-size="18" fill="${state.surfaceColor}">t${index + 1}</text>`,
+          `<line x1="${start[0]}" y1="${start[1]}" x2="${end[0]}" y2="${end[1]}" stroke="${state.surfaceColor}" stroke-width="3" marker-end="url(#arr)"/><text x="${end[0] + 10}" y="${end[1] - 10}" font-size="18" fill="${state.surfaceColor}">t${"₁₂"[index]}</text>`,
         );
       });
     }
 
     parts.push(
-      `<rect x="20" y="16" width="860" height="60" rx="10" fill="#eef3f5"/><text x="35" y="41" font-family="system-ui" font-size="18" font-weight="600" fill="#2c4d63">FCC (${formatVector(state.hkl)}) · one atomic layer · c=${formatNumber(layer * step)}</text><text x="35" y="63" font-family="system-ui" font-size="12" fill="#7792a2">Analytic orthogonal projection onto e₁=t₁/|t₁| and e₂=n̂ × e₁.</text><text x="36" y="599" font-family="system-ui" font-size="12" fill="#628192">Hosts: circles · selected: larger outline · primitive cell: filled · cubic mesh: dashed</text><rect x="20" y="616" width="860" height="65" rx="12" fill="white"/><text x="36" y="642" font-family="system-ui" font-size="14" fill="#385c72">|t₁|=${formatNumber(cell.lengths[0])} Å     |t₂|=${formatNumber(cell.lengths[1])} Å     angle=${formatNumber(cell.angle, 2)}°     area=${formatNumber(cell.area)} Å²</text><text x="36" y="664" font-family="system-ui" font-size="12" fill="#7792a2">${cell.coordination} nearest neighbors in this layer · density ${formatNumber(cell.density, 5)} Å⁻² · drag to pan / scroll to zoom</text></svg>`,
+      `<rect x="20" y="16" width="860" height="60" rx="10" fill="#eef3f5"/><text x="35" y="41" font-family="system-ui" font-size="18" font-weight="600" fill="#2c4d63">FCC (${formatVector(state.hkl)}) · ${layerGeometry(state.hkl).type.replace("-", " ")} net · layer ${layer} · c=${formatNumber(layer * step)}</text><text x="35" y="63" font-family="system-ui" font-size="12" fill="#7792a2">Analytic orthogonal projection onto e₁=t₁/|t₁| and e₂=n̂ × e₁.</text><text x="36" y="599" font-family="system-ui" font-size="12" fill="#628192">Hosts: circles · selected: larger outline · primitive cell: filled · cubic mesh: dashed</text><rect x="20" y="616" width="860" height="65" rx="12" fill="white"/><text x="36" y="642" font-family="system-ui" font-size="14" fill="#385c72">|t₁|=${formatNumber(cell.lengths[0])} Å     |t₂|=${formatNumber(cell.lengths[1])} Å     angle=${formatNumber(cell.angle, 2)}°     area=${formatNumber(cell.area)} Å²</text><text x="36" y="664" font-family="system-ui" font-size="12" fill="#7792a2">${cell.coordination} nearest neighbors in this layer · density ${formatNumber(cell.density, 5)} Å⁻²</text></svg>`,
     );
     this.svg = parts.join("");
     this.host.innerHTML = this.svg;

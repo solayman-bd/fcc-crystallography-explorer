@@ -3,6 +3,7 @@
  */
 
 import { neighborShells } from "./environment.js";
+import { layerGeometry, stackPlan } from "./layers.js";
 import {
   PRIMITIVE_VECTORS,
   directionInfo,
@@ -85,5 +86,15 @@ export function runChecks(a = 4.05, hkl = [1, 1, 1], load = [1, -1, 0]) {
 
   check("Reciprocal duality error", dualityError, 0);
   check("[111] pure normal repeat", directionInfo([1, 1, 1], a).period, Math.sqrt(3) * a);
+
+  // Layers of the current plane (Cell ⇄ Net animation).
+  const layers = layerGeometry(hkl, a);
+  check("Stacking period N × d = normal repeat", layers.period * layers.d, layers.repeat);
+  check("Layer density d × 4/a³ = 1 / area", layers.d * 4, layers.density);
+  check(
+    "Stacked layers fill one cube with 14 balls",
+    stackPlan(layers, 0).points.filter((point) => point.inCube).length,
+    14,
+  );
   return checks;
 }

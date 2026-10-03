@@ -5,6 +5,7 @@
  */
 
 import { parseIndices, parseTriple } from "./crystal/math.js";
+import { LESSONS } from "./education/concepts.js";
 
 /** Default settings. `version` identifies the saved-view format. */
 export const DEFAULT_STATE = {
@@ -102,12 +103,14 @@ export const DEFAULT_STATE = {
   lambda: 1.5406,
   pngScale: 2,
   lesson: -1,
+  animMode: "deconstruct",
+  animSpeed: 1,
 };
 
 /** Allowed values of the enumerated settings. */
 export const CHOICES = {
   topic: ["crystal", "geometry", "surface", "stacking", "environment", "slip", "reciprocal"],
-  workspace: ["crystal", "surface", "stacking", "reciprocal"],
+  workspace: ["crystal", "surface", "animation", "stacking", "reciprocal"],
   tab: ["learn", "calculate", "verify", "layers"],
   mode: ["closed", "ghost", "unique"],
   bounds: ["none", "outer", "all"],
@@ -118,6 +121,8 @@ export const CHOICES = {
   planeSet: ["one", "symmetry", "parallel", "atomic"],
   stack: ["fcc", "hcp", "aaa", "intrinsic", "extrinsic", "twin"],
   holes: ["none", "octa", "tetra", "both"],
+  animMode: ["deconstruct", "build", "primitive"],
+  animSpeed: [0.5, 1, 2],
 };
 
 /** Numeric limits of the range and number settings. */
@@ -141,7 +146,7 @@ export const RANGES = {
   extent: [1, 4],
   lambda: [0.001, 20],
   pngScale: [1, 4],
-  lesson: [-1, 11],
+  lesson: [-1, LESSONS.length - 1],
 };
 
 /**

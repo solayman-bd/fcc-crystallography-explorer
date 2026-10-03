@@ -887,7 +887,12 @@ tr.current {
     flex: 1;
   }
   .search-wrap {
-    display: none;
+    order: 3;
+    flex: 1 1 100%;
+    max-width: none;
+  }
+  #search-results {
+    width: 100%;
   }
   .shell {
     grid-template-columns: 210px minmax(350px, 1fr);
@@ -963,6 +968,70 @@ tr.current {
 
 .surface-stage #legend {
   display: none;
+}
+/* Keep the 2D net clear of the hint line at the bottom of the stage. */
+.surface-stage #surface svg {
+  height: calc(100% - 26px);
+}
+
+/* Cell ⇄ Net animation player */
+#player {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+}
+#player .player-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#player select {
+  width: auto;
+}
+#anim-step {
+  flex: 1;
+  min-width: 160px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4b6a7d;
+}
+#player .speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+#anim-caption {
+  margin: 8px 0 10px;
+  min-height: 3.2em;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #2f4d60;
+}
+#anim-scrub {
+  flex: 1;
+  min-width: 120px;
+}
+#player button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+#player button.handoff {
+  border-color: #a6cabc;
+  color: #2f6c60;
+  background: #e5f1eb;
+}
+.anim-launch {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.anim-launch button {
+  text-align: left;
 }
 #surface line,
 #surface polygon,

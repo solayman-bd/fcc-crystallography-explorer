@@ -5,6 +5,13 @@
 
 import { neighborShells } from "./crystal/environment.js";
 import {
+  classifyCut,
+  cubeAround,
+  layerGeometry,
+  layerLetter,
+  millerLabel,
+} from "./crystal/layers.js";
+import {
   directionInfo,
   isLatticeTranslation,
   latticeMetrics,
@@ -40,6 +47,7 @@ import {
 } from "./education/concepts.js";
 import { calculationReport, download, structureFile } from "./exports.js";
 import { DEFAULT_STATE, validateState } from "./state.js";
+import { ANIMATION_MODES } from "./visualization/cell-net.js";
 import { SurfaceView } from "./visualization/surface-view.js";
 import { CrystalViewer } from "./visualization/viewer.js";
 
@@ -73,6 +81,61 @@ function toast(message, isError = false) {
 function stopAnimation() {
   clearInterval(animationTimer);
   animationTimer = null;
+}
+
+/** The occupied layer the surface net and the animation actually show (nearest to the plane). */
+function currentLayer(s = state) {
+  return Math.round(planeLevel(s.hkl, s.N, s.location, s.c, s.layer) / planeInfo(s.hkl).step);
+}
+
+/** The heading question; the surface and animation questions follow the current plane. */
+function headerQuestion() {
+  if (concept === "surface") {
+    const type = layerGeometry(state.hkl).type.replace("-", " ");
+    return `Why is FCC(${millerLabel(state.hkl)}) ${/^[aeiou]/.test(type) ? "an" : "a"} ${type} surface net?`;
+  }
+
+  if (concept === "cellnet") {
+    const plane = millerLabel(layerGeometry(state.hkl).hkl);
+    return {
+      deconstruct: `How does one cube become the (${plane}) net?`,
+      build: `How do (${plane}) layers stack into the cube?`,
+      primitive: "How small can a cell be, in 2D and in 3D?",
+    }[state.animMode];
+  }
+
+  return CONCEPTS[concept].question;
+}
+
+/** Player bar under the 3D view in the Cell ⇄ Net workspace. */
+function renderPlayer() {
+  const info = viewer?.cellNet?.info();
+
+  if (!info) {
+    $("#player").innerHTML = viewer ? "" : note("The animation needs WebGL2.");
+    return;
+  }
+
+  $("#player").innerHTML =
+    `<div class="player-row"><select data-key="animMode" aria-label="Animation mode">${ANIMATION_MODES.map(([key, title]) => `<option value="${key}" ${state.animMode === key ? "selected" : ""}>${title}</option>`).join("")}</select><span id="anim-step"></span><label class="speed">Speed <select data-key="animSpeed" aria-label="Animation speed">${[0.5, 1, 2].map((speed) => `<option value="${speed}" ${state.animSpeed === speed ? "selected" : ""}>${speed}×</option>`).join("")}</select></label></div>` +
+    '<p id="anim-caption" aria-live="polite"></p>' +
+    `<div class="player-row"><button data-anim="back" title="Previous step (←)">← Back</button><button data-anim="play" class="primary"></button><button data-anim="next" title="Next step (→)">Next →</button><input id="anim-scrub" type="range" min="0" max="${info.total - 1}" step="0.01" value="${info.position}" aria-label="Animation timeline"><button data-anim="replay" title="Replay from the start">↺ Replay</button><button data-anim="surface" class="handoff" hidden>Open in Surface net</button></div>`;
+  updatePlayer(info);
+}
+
+function updatePlayer(info) {
+  if ($("#player").hidden || !$("#anim-step")) {
+    return;
+  }
+
+  $("#anim-step").textContent = `Step ${info.step + 1} of ${info.total} · ${info.label}`;
+  $("#anim-caption").textContent = info.caption;
+  $("#anim-scrub").max = info.total - 1;
+  $('[data-anim="play"]').textContent = info.playing ? "❚❚ Pause" : "▶ Play";
+  $('[data-anim="back"]').disabled = info.step <= 0;
+  $('[data-anim="next"]').disabled = info.step >= info.total - 1;
+  $('[data-anim="surface"]').hidden = !info.handoff;
+  renderLegend();
 }
 
 /** Merge a patch into the settings, validate it and redraw. Returns a copy of the new state. */
@@ -137,7 +200,12 @@ function openConcept(key, withPreset = false) {
 
   concept = key;
   const topic = CONCEPT_TOPICS[key];
-  const workspace = ["surface", "stacking", "reciprocal"].includes(topic) ? topic : "crystal";
+  const workspace =
+    key === "cellnet"
+      ? "animation"
+      : ["surface", "stacking", "reciprocal"].includes(topic)
+        ? topic
+        : "crystal";
 
   if (withPreset) {
     const presetKey = {
@@ -155,6 +223,7 @@ function openConcept(key, withPreset = false) {
       slip: "slip",
       partials: "partials",
       reciprocal: "diffraction",
+      cellnet: "animDeconstruct",
     }[key];
     applyPreset(presetKey);
     concept = key;
@@ -179,6 +248,16 @@ try {
   $("#view-error").textContent =
     "3D needs WebGL2. Enable browser hardware acceleration or try another modern browser. The 2D surface viewer, calculations and exports remain available. " +
     error.message;
+}
+
+if (viewer) {
+  viewer.onAnimation = updatePlayer;
+  viewer.onAnimationPosition = (position) => {
+    const scrub = $("#anim-scrub");
+    if (scrub && document.activeElement !== scrub) {
+      scrub.value = position;
+    }
+  };
 }
 
 function textField(label, key, { type = "text", min, max, step, hint = "", value } = {}) {
@@ -437,10 +516,27 @@ function renderControls() {
       '<div class="control-title">A SINGLE ATOMIC LAYER</div>' +
       textField("Surface normal (h k l)", "hkl") +
       indexButtons("hkl", ["0 0 1", "1 1 0", "1 1 1", "1 1 2", "2 1 0", "1 -1 0"]) +
-      textField("Occupied layer index", "layer", { type: "number", min: -500, max: 500, step: 1 }) +
-      '<button data-action="use-layer">Use this occupied layer</button>' +
+      textField("Occupied layer index", "layer", {
+        type: "number",
+        min: -500,
+        max: 500,
+        step: 1,
+        value: currentLayer(),
+      }) +
+      (state.location === "layer"
+        ? ""
+        : '<button data-action="use-layer">Keep this layer when the plane moves</button>') +
       note(
-        `The net uses the nearest occupied layer to the chosen plane. Current c = ${fmt(Math.round(planeLevel(state.hkl, state.N, state.location, state.c, state.layer) / planeInfo(state.hkl).step) * planeInfo(state.hkl).step)}.`,
+        `Layer ${currentLayer()} at c = ${fmt(currentLayer() * planeInfo(state.hkl).step)}${state.location === "layer" ? "." : `, the occupied layer nearest to the ${escapeHtml(state.location)} plane.`}`,
+      ) +
+      section(
+        "animate",
+        "Animate: 3D cell ⇄ 2D net",
+        `<div class="anim-launch">${ANIMATION_MODES.map(([key, title]) => `<button data-anim-mode="${key}" class="${state.workspace === "animation" && state.animMode === key ? "active" : ""}">${title}</button>`).join("")}</div>` +
+          note(
+            "Opens the Cell ⇄ Net 3D view for this plane and layer. Step with the player under the view or the ← / → keys.",
+          ),
+        true,
       ) +
       checkField("2D primitive surface cell", "surfaceCell") +
       checkField("Surface vectors t₁, t₂", "surfaceVectors") +
@@ -603,6 +699,18 @@ function currentValues() {
     ]);
   }
 
+  if (concept === "cellnet") {
+    const layers = layerGeometry(s.hkl, s.a);
+    return valueList([
+      ["Plane", `(${millerLabel(layers.hkl)}) · layer ${currentLayer()}`],
+      ["Net", layers.type.replace("-", " ")],
+      ["Layer spacing d", `${fmt(layers.d * s.a)} Å`],
+      ["Stacking period N", layers.period],
+      ["Primitive cell", `${layers.lengths.map((length) => fmt(length * s.a)).join(" / ")} Å`],
+      ["Area per atom", `${fmt(layers.area * s.a * s.a)} Å²`],
+    ]);
+  }
+
   if (["planes", "spacing"].includes(concept)) {
     return valueList([
       ["Plane", `(${fmtVec(s.hkl)})`],
@@ -667,6 +775,7 @@ function renderLearn() {
             spacing: "Three spacings",
             surface: "Surface net",
             packing: "Close packing",
+            cellnet: "Cell ⇄ net",
             stacking: "Stacking",
             neighbors: "Neighbors",
             interstitials: "Holes",
@@ -799,6 +908,42 @@ function renderCalculate() {
     note(
       "A primitive integer kernel is obtained using Bézout identities, then Gauss-reduced by lattice-preserving integer operations. The area identity certifies it is primitive; a bounded shortest-vector guess would not.",
     );
+
+  if (s.topic === "surface" || s.workspace === "animation") {
+    const layers = layerGeometry(s.hkl, s.a);
+    const layer = currentLayer();
+    const cube = cubeAround(layers, layer);
+    const cut = classifyCut(layers, cube.slices.find((slice) => slice.layer === layer).polygon);
+    html +=
+      `<h3>Layers of (${millerLabel(layers.hkl)})</h3><div class="equation">s = ${layers.hkl.map((value, axis) => `${value}${"XYZ"[axis]}`).join(" + ")}<br>layer j: s = j × ${fmt(layers.step)}<br>d = Δs·a/|hkl|</div>` +
+      valueList([
+        ["Reduced indices", `(${fmtVec(layers.hkl)})`],
+        ["Layer step Δs", fmt(layers.step)],
+        ["Layer spacing d", `${fmt(layers.d * s.a)} Å`],
+        ["Net", layers.type.replace("-", " ")],
+        [
+          "Interlayer shift",
+          `${fmt(norm(layers.shift) * s.a)} Å · (${layers.shiftFractions.map((value) => fmt(value)).join(", ")}) in t₁, t₂`,
+        ],
+        ["Stacking period N", layers.period],
+        ["N·d (shortest lattice vector ∥ n)", `${fmt(layers.repeat * s.a)} Å`],
+        [
+          "Centered cell",
+          layers.centered
+            ? `${fmt(norm(layers.centered.u) * s.a)} × ${fmt(norm(layers.centered.v) * s.a)} Å, 2 atoms`
+            : "none (net is primitive " + layers.type.replace("-", " ") + ")",
+        ],
+        [
+          `Cube cut of layer ${layer}`,
+          `${cut.shape}${cut.isCell ? `, a cell with ${cut.atoms} atoms` : ", not a cell"}`,
+        ],
+        [
+          "Layers in one cube",
+          `${cube.layers.length} · balls ${cube.slices.map((slice) => slice.count).join(", ")}`,
+        ],
+      ]);
+  }
+
   html +=
     `<h3>Direction [${fmtVec(s.uvw)}]</h3>` +
     valueList([
@@ -926,7 +1071,30 @@ function renderStats() {
   const reflection = reflectionInfo(s.reflection, s.a, s.lambda);
   let stats;
 
-  if (s.workspace === "surface") {
+  if (s.workspace === "animation") {
+    const layers = layerGeometry(s.hkl, s.a);
+    const sequence = Array.from({ length: Math.min(layers.period + 1, 7) }, (_, j) =>
+      layerLetter(j, layers.period),
+    ).join("");
+    stats = [
+      [
+        "Plane",
+        `(${millerLabel(layers.hkl)})`,
+        `${layers.type.replace("-", " ")} net · layer ${currentLayer()}`,
+      ],
+      ["Layer spacing d", fmt(layers.d * s.a), `Å · Δs = ${fmt(layers.step)}`],
+      [
+        "Stacking period",
+        `N = ${layers.period}`,
+        `${sequence}${layers.period + 1 > 7 ? "…" : ""} · N·d = ${fmt(layers.repeat * s.a, 3)} Å`,
+      ],
+      [
+        "Primitive cell",
+        layers.lengths.map((length) => fmt(length * s.a, 2)).join(" / "),
+        `Å · ${fmt(layers.angle, 1)}°`,
+      ],
+    ];
+  } else if (s.workspace === "surface") {
     stats = [
       ["Surface cell", `${fmt(surface.angle, 1)}°`, "one lattice site per cell"],
       [
@@ -979,7 +1147,13 @@ function renderStats() {
         s.atoms
           ? formatCount(viewer?.count ?? latticeSites(s.N, s.mode === "unique").length)
           : "Off",
-        s.primitiveOnly ? "primitive tiling sites" : `${s.mode} · no extra overlays`,
+        s.primitiveOnly
+          ? "primitive tiling sites"
+          : {
+              closed: "closed drawing · all boundary sites",
+              ghost: "unique atoms + periodic ghosts",
+              unique: "unique atoms only",
+            }[s.mode],
       ],
       ["Nearest distance", fmt(metrics.nn), "Å · a / √2"],
       ["Packing fraction", fmt(metrics.apf, 5), "π / (3√2)"],
@@ -1082,7 +1256,39 @@ function renderLegend() {
   const s = state;
   const items = [];
 
-  if (s.workspace === "stacking") {
+  if (s.workspace === "animation") {
+    // Only what the current step shows.
+    const layers = layerGeometry(s.hkl);
+    const plane = millerLabel(layers.hkl);
+    const info = viewer?.cellNet?.info();
+    const on = new Set(info?.visible ?? []);
+
+    if (s.animMode === "build") {
+      const letters = (info?.letters ?? []).sort(([x], [y]) => x.localeCompare(y));
+      for (const [letter, color] of letters.slice(0, 4)) items.push([color, `Layer ${letter}`]);
+      if (letters.length > 4) items.push(["#9fb3bf", `… ${letters.length} registries`]);
+    } else {
+      items.push(
+        on.has("color")
+          ? ["linear-gradient(90deg,#3f8fc4,#e08a3c,#8e6bc9,#4aa37c)", "Balls colored by layer (s)"]
+          : [s.color, `${s.element} atoms`],
+      );
+    }
+
+    if (on.has("plane")) items.push([s.planeColor, `(${plane}) plane`]);
+    if (on.has("cut")) items.push(["#e4572e", "Cut by the cube walls"]);
+    if (on.has("conv") || (on.has("morphCell") && !on.has("morph") && layers.centered)) {
+      items.push(["#5185a0", "Centered cell"]);
+    }
+    if (on.has("prim") || (on.has("morphCell") && on.has("morph")) || on.has("rhombo")) {
+      items.push([s.surfaceColor, "Primitive cell"]);
+    }
+    if (on.has("shift")) items.push([s.dirColor, "Interlayer shift"]);
+    if (on.has("dmark")) items.push(["#63879d", "Layer spacing d"]);
+    if (on.has("avec")) items.push(["#36ad9c", "a₁, a₂, a₃"]);
+    if (on.has("diag")) items.push(["#d35f73", "[111] long diagonal"]);
+    if (on.has("cube")) items.push(["#6c8b9e", "Conventional cube"]);
+  } else if (s.workspace === "stacking") {
     if (s.atoms) {
       for (const registry of s.registries) {
         items.push([s["color" + registry], registry + " registry"]);
@@ -1139,20 +1345,25 @@ function renderLegend() {
         }
       }
 
-      if (s.plane) {
+      // Only list planes that were actually drawn (a plane can miss the box).
+      const drawn = viewer?.drawn ?? { highlighted: true, planes: 1, comparison: true };
+
+      if (s.plane && drawn.planes) {
         items.push([
           s.planeColor,
           s.planeSet === "symmetry"
             ? "Symmetry family · multiple colors"
-            : `(${fmtVec(s.hkl)}) · c=${fmt(planeLevel(s.hkl, s.N, s.location, s.c, s.layer))}`,
+            : s.planeSet === "one"
+              ? `(${fmtVec(s.hkl)}) · c=${fmt(planeLevel(s.hkl, s.N, s.location, s.c, s.layer))}`
+              : `${drawn.planes} parallel (${fmtVec(s.hkl)}) planes`,
         ]);
       }
 
-      if (s.plane && s.highlight) {
+      if (drawn.highlighted) {
         items.push([s.layerColor, "Atoms on primary plane"]);
       }
 
-      if (s.plane2) {
+      if (s.plane2 && drawn.comparison) {
         items.push([s.surfaceColor, "Comparison plane"]);
       }
 
@@ -1219,15 +1430,21 @@ function render({ fit = false, controls = true, panel = true } = {}) {
   $("#surface").hidden = !isSurface;
   $("#view-error").hidden = isSurface || !!viewer;
 
+  // Leaving the Cell ⇄ Net workspace cancels its timers and frames.
+  if (s.workspace !== "animation") {
+    viewer?.disposeAnimation();
+  }
+
   if (isSurface) {
     surfaceView.draw(s, selection);
   } else {
     viewer?.draw(s, selection, fit);
   }
 
+  const view = { surface: "SINGLE-LAYER NET", animation: "CELL ⇄ NET ANIMATION" }[s.workspace];
   $("#eyebrow").textContent =
-    `${TOPICS.find((topic) => topic[0] === s.topic)[1].toUpperCase()} / ${s.workspace === "surface" ? "SINGLE-LAYER NET" : s.workspace.toUpperCase() + " VIEW"}`;
-  $("#question").textContent = CONCEPTS[concept].question;
+    `${TOPICS.find((topic) => topic[0] === s.topic)[1].toUpperCase()} / ${view ?? s.workspace.toUpperCase() + " VIEW"}`;
+  $("#question").textContent = headerQuestion();
   $("#topics").innerHTML = TOPICS.map(
     ([key, title], index) =>
       `<button data-topic="${key}" class="${s.topic === key ? "active" : ""}"><span>${String(index + 1).padStart(2, "0")}</span>${title}</button>`,
@@ -1271,7 +1488,16 @@ function render({ fit = false, controls = true, panel = true } = {}) {
   $("#message").textContent = [...new Set(messages)].join(" ");
   $("#hint").textContent = isSurface
     ? "One atomic layer · Drag to pan · Scroll to zoom · Click a site"
-    : "Drag to rotate · Scroll to zoom · Right-drag to pan · Click a site";
+    : s.workspace === "animation"
+      ? "← / → step · Drag to rotate between steps · Scroll to zoom"
+      : "Drag to rotate · Scroll to zoom · Right-drag to pan · Click a site";
+  $("#player").hidden = s.workspace !== "animation";
+  $("#inspector").hidden = s.workspace === "animation";
+
+  if (s.workspace === "animation") {
+    renderPlayer();
+  }
+
   $("#sequence").hidden = s.workspace !== "stacking";
   $("#sequence").innerHTML = `<small>REGISTRY SEQUENCE</small>${STACKINGS[s.stack].sequence
     .slice(0, s.layers)
@@ -1284,7 +1510,7 @@ function render({ fit = false, controls = true, panel = true } = {}) {
   $("#lessons").innerHTML =
     s.lesson < 0
       ? ""
-      : `Lesson ${s.lesson + 1} of ${LESSONS.length}<progress max="12" value="${s.lesson + 1}"></progress><strong>${LESSONS[s.lesson][1]}</strong><div class="row"><button data-lesson="${Math.max(0, s.lesson - 1)}">← Back</button><button data-lesson="${Math.min(11, s.lesson + 1)}">${s.lesson === 11 ? "Revisit" : "Next →"}</button><button data-action="end-tour">Close</button></div>`;
+      : `Lesson ${s.lesson + 1} of ${LESSONS.length}<progress max="${LESSONS.length}" value="${s.lesson + 1}"></progress><strong>${LESSONS[s.lesson][1]}</strong><div class="row"><button data-lesson="${Math.max(0, s.lesson - 1)}">← Back</button><button data-lesson="${Math.min(LESSONS.length - 1, s.lesson + 1)}">${s.lesson === LESSONS.length - 1 ? "Revisit" : "Next →"}</button><button data-action="end-tour">Close</button></div>`;
 }
 
 /** Jump to a guided-tour lesson. */
@@ -1407,7 +1633,8 @@ function applyInput(input, live = false) {
     let value =
       input.type === "checkbox"
         ? input.checked
-        : ["number", "range"].includes(input.type) || ["shell", "slipIndex"].includes(key)
+        : ["number", "range"].includes(input.type) ||
+            ["shell", "slipIndex", "animSpeed"].includes(key)
           ? Number(input.value)
           : input.value;
 
@@ -1451,6 +1678,40 @@ document.addEventListener("input", (event) => {
   if (event.target.matches("[data-key][type=range],[data-key][type=color]")) {
     applyInput(event.target, true);
   }
+
+  if (event.target.id === "anim-scrub") {
+    viewer?.cellNet?.seek(Number(event.target.value));
+  }
+});
+
+// ← / → step through the animation (not while typing in a field).
+document.addEventListener("keydown", (event) => {
+  const animation = viewer?.cellNet;
+
+  if (
+    state.workspace !== "animation" ||
+    !animation ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.target.closest?.("input, select, textarea, [contenteditable]")
+  ) {
+    return;
+  }
+
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    animation.next();
+  } else if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    animation.back();
+  }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    viewer?.cellNet?.pause();
+  }
 });
 
 document.addEventListener("click", async (event) => {
@@ -1464,6 +1725,31 @@ document.addEventListener("click", async (event) => {
 
       if (button.dataset.concept) {
         openConcept(button.dataset.concept, true);
+        return;
+      }
+
+      if (button.dataset.animMode) {
+        stopAnimation();
+        concept = "cellnet";
+        update({ workspace: "animation", topic: "surface", animMode: button.dataset.animMode });
+        return;
+      }
+
+      if (button.dataset.anim) {
+        const animation = viewer?.cellNet;
+
+        if (button.dataset.anim === "surface") {
+          concept = "surface";
+          update({ workspace: "surface", topic: "surface" });
+          surfaceView.fit();
+        } else if (animation) {
+          ({
+            back: () => animation.back(),
+            next: () => animation.next(),
+            play: () => animation.toggle(),
+            replay: () => animation.replay(),
+          })[button.dataset.anim]?.();
+        }
         return;
       }
 
@@ -1488,6 +1774,11 @@ document.addEventListener("click", async (event) => {
         if (["surface", "stacking", "reciprocal"].includes(space)) {
           patch.topic = space;
           concept = space;
+        }
+
+        if (space === "animation") {
+          patch.topic = "surface";
+          concept = "cellnet";
         }
 
         update(patch, { fit: true });
@@ -1629,7 +1920,7 @@ document.addEventListener("click", async (event) => {
           viewer?.look(parseIndices($("#custom-look").value));
           break;
         case "use-layer":
-          update({ location: "layer" });
+          update({ location: "layer", layer: currentLayer() });
           break;
         case "inspect-surface":
           update({ workspace: "crystal", surface: true }, { fit: true });
@@ -1754,6 +2045,7 @@ window.FCC_EXPLORER = {
   report: () => calculationReport(state),
   exportConfig: viewSnapshot,
   loadConfig: loadView,
+  animation: () => viewer?.cellNet?.info() ?? null,
 };
 
 render({ fit: true });

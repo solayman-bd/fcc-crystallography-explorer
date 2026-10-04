@@ -1359,7 +1359,9 @@ export class CrystalViewer {
     }
 
     this.messages.push(
-      "Reciprocal coordinates: one unit = 2π/a Å⁻¹. Forbidden grid positions are not reciprocal nodes.",
+      S.hexagonal
+        ? "Reciprocal coordinates: one unit = 2π/a Å⁻¹. Extinct HCP reflections are reciprocal nodes where the two-atom basis cancels the scattering."
+        : "Reciprocal coordinates: one unit = 2π/a Å⁻¹. Forbidden grid positions are not reciprocal nodes.",
     );
   }
 

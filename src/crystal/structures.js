@@ -424,6 +424,7 @@ export const millerBravais = ([h, k, l]) => [h, k, -(h + k), l];
  */
 export function fromMillerBravais(text) {
   const values = String(text)
+    .replace(/−/g, "-")
     .replace(/[()[\]<>]/g, "")
     .trim()
     .split(/[\s,;]+/)
@@ -456,6 +457,7 @@ export function bravaisDirection([u, v, w]) {
  */
 export function fromBravaisDirection(text) {
   const values = String(text)
+    .replace(/−/g, "-")
     .replace(/[()[\]<>]/g, "")
     .trim()
     .split(/[\s,;]+/)

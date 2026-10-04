@@ -10,7 +10,9 @@ import {
   planeLevelOf,
   planeOf,
   planeText,
+  prismSites,
   reflectionOf,
+  regionOf,
   sitesOf,
   slipSystemsOf,
   structureFor,
@@ -259,6 +261,8 @@ ${Object.values(REFERENCES).map((reference) => `- [${reference.title}](${referen
 /** The calculation report for simple cubic, BCC or HCP. */
 function generalReport(state) {
   const S = structureFor(state.structure);
+  const region = regionOf(S, state);
+  const drawnSites = region.kind === "prism" ? prismSites(S, region.stories) : sitesOf(S, state.N);
   const metrics = metricsOf(S, state.a);
   const plane = planeOf(S, state.hkl, state.a);
   const surface = surfaceOf(S, state.hkl, state.a);
@@ -275,11 +279,11 @@ Generated ${new Date().toISOString()}. Ideal monatomic ${S.name.toLowerCase()} (
 
 ## Crystal
 
-a=${state.a}${S.hexagonal ? `, c=${S.axes[2][2] * state.a}` : ""}, label=${state.element}, N=${state.N.join(" × ")} unit cells; atoms per unit cell ${S.unit.count}; unique PBC count=${S.unit.atoms * cells}; closed drawing count=${sitesOf(S, state.N).length}. R=${metrics.radius}; nearest neighbor=${metrics.nn}; coordination=${S.coordination}; APF=${metrics.apf}; primitive volume=${metrics.primitiveVolume} Å³.
+a=${state.a}${S.hexagonal ? `, c=${S.axes[2][2] * state.a}` : ""}, label=${state.element}, N=${state.N.join(" × ")} unit cells; atoms per unit cell ${S.unit.count}; unique PBC export count=${S.unit.atoms * cells}; closed ${region.kind === "prism" ? "hexagonal prism" : "unit-cell supercell"} drawing count=${drawnSites.length}. R=${metrics.radius}; nearest neighbor=${metrics.nn}; coordination=${S.coordination}; APF=${metrics.apf}; primitive volume=${metrics.primitiveVolume} Å³.
 
 ## Plane (${planeText(S, state.hkl)})
 
-Equation h·f₁ + k·f₂ + l·f₃=${planeLevelOf(S, state.hkl, state.N, state.location, state.c, state.layer)} in unit-cell fractions. Geometric d=${plane.d}; adjacent layer gaps=${list(plane.gaps)}; pure normal translation=${plane.period}. Lattice-layer step in c=${plane.step}; layers at c=${list(plane.offsets)} (+ multiples of the step).
+Equation h·f₁ + k·f₂ + l·f₃=${planeLevelOf(S, state.hkl, region.levelCells, state.location, state.c, state.layer)} in unit-cell fractions. Geometric d=${plane.d}; adjacent layer gaps=${list(plane.gaps)}; pure normal translation=${plane.period}. Lattice-layer step in c=${plane.step}; layers at c=${list(plane.offsets)} (+ multiples of the step).
 
 ## Primitive surface
 

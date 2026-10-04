@@ -64,6 +64,7 @@ export function parseIndices(input) {
   const indices = Array.isArray(input)
     ? input
     : String(input)
+        .replace(/−/g, "-")
         .replace(/[()[\]<>]/g, "")
         .trim()
         .split(/[\s,;]+/)
@@ -87,6 +88,7 @@ export function parseTriple(input, min = -100, max = 100, integer = false) {
   const values = Array.isArray(input)
     ? input
     : String(input)
+        .replace(/−/g, "-")
         .trim()
         .split(/[\s,;]+/)
         .map(Number);

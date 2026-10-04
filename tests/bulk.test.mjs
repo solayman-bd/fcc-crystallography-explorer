@@ -4,17 +4,20 @@ import {
   atomsNear,
   directionOf,
   familyOf,
+  fractionalOf,
   holesOf,
   hostsOf,
   neighborsOf,
   partialsOf,
   planeLevelOf,
+  planeNormal,
   prismSites,
   reflectionOf,
   regionOf,
   sitesOf,
   slipSystemsOf,
   structureFactorOf,
+  toCartesian,
   wignerSeitzOf,
 } from "../src/crystal/bulk.js";
 import { add, dot, norm } from "../src/crystal/math.js";
@@ -22,6 +25,7 @@ import { STRUCTURES, bravaisDirection, fromBravaisDirection } from "../src/cryst
 import { runChecks } from "../src/crystal/verify.js";
 import { DEFAULT_STATE } from "../src/state.js";
 import { calculationReport, structureFile } from "../src/exports.js";
+import { layerForState, layerGeometry, layerNet } from "../src/crystal/layers.js";
 
 const close = (actual, expected, tol = 1e-9) =>
   assert.ok(
@@ -30,6 +34,77 @@ const close = (actual, expected, tol = 1e-9) =>
   );
 const KEYS = ["sc", "bcc", "fcc", "hcp"];
 const isAtom = (S, p) => atomsNear(S, p, 1e-6).length === 1;
+
+test("picked surface and neighbor sites retain correct HCP fractional coordinates", () => {
+  const S = STRUCTURES.hcp;
+  const sites = [
+    ...layerNet(layerGeometry([0, 0, 1], 1, S), 1, 1).points,
+    ...neighborsOf(S),
+    ...hostsOf(S, holesOf(S, "octa", [1, 1, 1])[0]),
+  ];
+  for (const site of sites) {
+    const roundTrip = toCartesian(S, fractionalOf(site, S));
+    site.p.forEach((value, axis) => close(roundTrip[axis], value));
+  }
+  const basis = { p: toCartesian(S, [1 / 3, 2 / 3, 1 / 2]) };
+  fractionalOf(basis, S).forEach((value, axis) => close(value, [1 / 3, 2 / 3, 1 / 2][axis]));
+  assert.deepEqual(fractionalOf({ p: [0, 0.5, 0.5] }), [0, 0.5, 0.5]);
+});
+
+test("high-index HCP surface neighbors match an independent bulk atom search", () => {
+  const S = STRUCTURES.hcp;
+  for (const hkl of [
+    [-12, -9, 2],
+    [12, 9, -2],
+    [-11, -8, 6],
+    [-11, -5, 2],
+    [24, 21, 2],
+  ]) {
+    const g = layerGeometry(hkl, 1, S);
+    const normal = planeNormal(S, hkl);
+    const inPlane = atomsNear(S, [0, 0, 0], Math.min(...g.lengths) + 1e-6).filter(
+      (atom) => atom.distance > 1e-6 && Math.abs(dot(atom.p, normal)) < 1e-7,
+    );
+    const distance = inPlane[0].distance;
+    close(g.neighborDistance, distance);
+    assert.equal(
+      g.coordination,
+      inPlane.filter((atom) => Math.abs(atom.distance - distance) < 1e-7).length,
+    );
+    const patch = layerNet(g, 0, 1).points;
+    for (const neighbor of inPlane.filter((atom) => Math.abs(atom.distance - distance) < 1e-7)) {
+      assert.ok(
+        patch.some((site) =>
+          site.p.every((value, axis) => Math.abs(value - neighbor.p[axis]) < 1e-7),
+        ),
+        `missing neighbor in ${hkl} net`,
+      );
+    }
+  }
+});
+
+test("HCP centered layers and reports use the selected prism or unit-cell region", () => {
+  for (const hexPrism of [true, false]) {
+    const state = {
+      ...DEFAULT_STATE,
+      structure: "hcp",
+      hexPrism,
+      hkl: [1, 0, 0],
+      location: "center",
+    };
+    const layers = layerGeometry(state.hkl, 1, "hcp");
+    assert.equal(layerForState(layers, state), hexPrism ? 0 : 1);
+    const report = calculationReport(state);
+    assert.match(
+      report,
+      hexPrism
+        ? /closed hexagonal prism drawing count=17/
+        : /closed unit-cell supercell drawing count=9/,
+    );
+    assert.match(report, hexPrism ? /h·f₁ \+ k·f₂ \+ l·f₃=0 in/ : /h·f₁ \+ k·f₂ \+ l·f₃=0\.5 in/);
+    assert.match(report, /unique PBC export count=2/);
+  }
+});
 
 test("unit cells: closed sites, unique atoms and periodic weights", () => {
   for (const key of KEYS) {

@@ -113,11 +113,11 @@ const structure = (s = state) => STRUCTURES[s.structure];
 const planeLayers = (s = state) => layerGeometry(s.hkl, s.a, s.structure);
 
 /**
- * A look-along direction as a Cartesian vector: [u v w] of the structure in the crystal and
- * animation views; the stacking and reciprocal views take the indices as their own axes.
+ * A look-along direction as a Cartesian vector: [u v w] of the structure, including when
+ * viewing reciprocal space. The stacking comparison uses its displayed orthonormal frame.
  */
 const lookVector = (uvw) =>
-  ["stacking", "reciprocal"].includes(state.workspace) ? uvw : directionVector(structure(), uvw);
+  state.workspace === "stacking" ? uvw : directionVector(structure(), uvw);
 
 /** Plane and direction indices for text: as typed for cubic, (h k i l) / [u v t w] for HCP. */
 const planeName = (hkl, s = state) =>
@@ -240,11 +240,8 @@ function structureDefaults(key, s = DEFAULT_STATE) {
     patch.element = EXAMPLES[key].element;
   }
 
-  if (key === "fcc") {
-    return { ...patch, cutoff: DEFAULT_STATE.cutoff };
-  }
-
-  patch.cutoff = Math.ceil((shellDistances(S)[2] + 0.02) * 100) / 100;
+  patch.cutoff =
+    key === "fcc" ? DEFAULT_STATE.cutoff : Math.ceil((shellDistances(S)[2] + 0.02) * 100) / 100;
 
   if (S.hexagonal && !S.planes.some(([indices]) => indices === fmtVec(s.hkl))) {
     patch.hkl = [0, 0, 1];
@@ -879,7 +876,10 @@ function renderControls() {
       textField("Wavelength λ (Å)", "lambda", { type: "number", min: 0.001, max: 20, step: 0.01 }) +
       rangeField("Reciprocal grid extent", "extent", 1, 4) +
       checkField("Allowed reciprocal nodes", "atoms") +
-      checkField("Forbidden comparison markers", "forbidden") +
+      checkField(
+        S.hexagonal ? "Nodes with extinct reflections" : "Forbidden comparison markers",
+        "forbidden",
+      ) +
       checkField("Selected G arrow & marker", "selectedG") +
       checkField("Primitive reciprocal vectors", "basisReciprocal") +
       checkField("Reciprocal axes", "axes") +
@@ -1645,7 +1645,9 @@ function renderInspector() {
           ? "Forward-scattering origin"
           : selection.allowed
             ? "Allowed reciprocal node"
-            : "Forbidden comparison position",
+            : S.hexagonal
+              ? "Reciprocal node · extinct reflection (basis cancellation)"
+              : "Forbidden comparison position",
       ],
     );
   } else if (space === "stacking") {
@@ -1656,7 +1658,7 @@ function renderInspector() {
       ["Frame", "x ∥ [1 −1 0], y ∥ [1 1 −2], z ∥ [111]"],
     );
   } else {
-    const f = fractionalOf(selection);
+    const f = fractionalOf(selection, S);
     const region = regionOf(S, s);
     const level = planeLevelOf(S, s.hkl, region.levelCells, s.location, s.c, s.layer);
     rows.push(
@@ -1759,7 +1761,10 @@ function renderLegend() {
     }
 
     if (s.atoms && s.forbidden) {
-      items.push(["#c6a694", "Forbidden grid markers"]);
+      items.push([
+        "#c6a694",
+        S.hexagonal ? "Nodes with extinct reflections" : "Forbidden grid markers",
+      ]);
     }
 
     if (s.selectedG) {
@@ -1923,12 +1928,13 @@ function render({ fit = false, controls = true, panel = true } = {}) {
   $("#eyebrow").textContent =
     `${S.short} · ${TOPICS.find((topic) => topic[0] === s.topic)[1].toUpperCase()} / ${view ?? s.workspace.toUpperCase() + " VIEW"}`;
   // Look-along buttons and the export note follow the structure ([u v t w] labels for HCP).
-  const looks = S.hexagonal
-    ? STRUCTURES.hcp.looks
-    : ["1 0 0", "0 1 0", "0 0 1", "1 1 0", "1 0 1", "0 1 1", "1 1 1"].map((value) => [
-        value,
-        `[${value.replaceAll(" ", "")}]`,
-      ]);
+  const looks =
+    S.hexagonal && s.workspace !== "stacking"
+      ? STRUCTURES.hcp.looks
+      : ["1 0 0", "0 1 0", "0 0 1", "1 1 0", "1 0 1", "0 1 1", "1 1 1"].map((value) => [
+          value,
+          `[${value.replaceAll(" ", "")}]`,
+        ]);
   $$("[data-look]").forEach((button, index) => {
     [button.dataset.look, button.textContent] = looks[index];
   });
@@ -2399,7 +2405,7 @@ document.addEventListener("click", async (event) => {
       }
 
       if (button.id === "look-dir") {
-        viewer?.look(directionVector(structure(), state.uvw));
+        viewer?.look(lookVector(state.uvw));
         return;
       }
 
@@ -2436,9 +2442,15 @@ document.addEventListener("click", async (event) => {
       }
 
       switch (button.dataset.action) {
-        case "custom-look":
-          viewer?.look(lookVector(parseIndices($("#custom-look").value)));
+        case "custom-look": {
+          const text = $("#custom-look").value;
+          const indices =
+            structure().hexagonal && state.workspace !== "stacking"
+              ? (fromBravaisDirection(text) ?? text)
+              : text;
+          viewer?.look(lookVector(parseIndices(indices)));
           break;
+        }
         case "use-layer":
           update({ location: "layer", layer: currentLayer() });
           break;

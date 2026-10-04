@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PRIMITIVE_VECTORS } from "../src/crystal/lattice.js";
-import { dot, scale } from "../src/crystal/math.js";
+import { dot, parseIndices, parseTriple, scale } from "../src/crystal/math.js";
+import { fromBravaisDirection, fromMillerBravais } from "../src/crystal/structures.js";
 import {
   braggTable,
   isAllowedReflection,
@@ -86,6 +87,14 @@ test("settings validation", () => {
   const s = validateState({ ...DEFAULT_STATE, unknown: 1, N: [2, 1, 1], cell: [5, 5, 5] });
   assert.equal("unknown" in s, false);
   assert.deepEqual(s.cell, [1, 0, 0]);
+});
+
+test("copied negative indices and coordinates accept the displayed Unicode minus", () => {
+  assert.deepEqual(parseIndices("(1 −1 0)"), [1, -1, 0]);
+  assert.deepEqual(parseTriple("−0.5 0 1"), [-0.5, 0, 1]);
+  assert.deepEqual(fromMillerBravais("(1 0 −1 0)"), [1, 0, 0]);
+  assert.deepEqual(fromBravaisDirection("[2 −1 −1 0]"), [1, 0, 0]);
+  assert.throws(() => fromMillerBravais("(1 0 −2 0)"));
 });
 
 test("structure exports contain only unique bulk atoms", () => {

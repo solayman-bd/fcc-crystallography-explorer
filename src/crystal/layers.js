@@ -145,15 +145,24 @@ export const layerHeight = (geometry, j) => layerS(geometry, j) / geometry.gNorm
 
 /** One atom of layer j per basis atom in it; the layer is these seeds plus the 2D net. */
 function layerSeeds(geometry, j) {
-  const { structure, lattice, step, sigma } = geometry;
+  const { structure, lattice, step, sigma, t1, t2 } = geometry;
   const M = geometry.offsets.length;
   const s = layerS(geometry, j);
-  return geometry.classes[j - Math.floor(j / M) * M].map((b) =>
+  const seeds = geometry.classes[j - Math.floor(j / M) * M].map((b) =>
     add(
       latticePoint(structure, lattice.q, Math.round((s - sigma[b]) / step)),
       structure.basisCartesian[b],
     ),
   );
+  // Bézout solutions can place basis atoms many net cells apart for high indices.
+  // Put them in the same half-open surface cell before making a finite patch or
+  // searching neighboring cells. These integer shifts preserve the physical layer.
+  return seeds.map((seed) => {
+    const [i, k] = inBasis(subtract(seed, seeds[0]), t1, t2).map((value) =>
+      Math.floor(value + 1e-9),
+    );
+    return subtract(seed, add(scale(t1, i), scale(t2, k)));
+  });
 }
 
 /** Shortest in-plane representative of an offset modulo the net, with its t1, t2 fractions. */
@@ -363,7 +372,8 @@ export function layerForState(geometry, state) {
   if (state.location === "layer") {
     return state.layer;
   }
-  const c = planeLevel(state.hkl, state.N, state.location, state.c, state.layer);
+  const cells = geometry.structure.hexagonal && state.hexPrism ? [0, 0, state.N[2]] : state.N;
+  const c = planeLevel(state.hkl, cells, state.location, state.c, state.layer);
   return nearestLayer(geometry, c / gcdOf(state.hkl));
 }
 

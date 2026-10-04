@@ -66,13 +66,13 @@ with warnings.catch_warnings():
 
 DOWNLOAD_HELP = """\
 ## Optional: download the standalone local version
-This writes the same HTML to the notebook runtime and offers it as a download. It runs offline after download. XYZ, CIF and POSCAR exports inside the app always describe the configured **ideal bulk FCC supercell**, not an HCP comparison, defect stack, reciprocal view or set of ghost atoms.
+This writes the same HTML to the notebook runtime and offers it as a download. It runs offline after download. XYZ, CIF and POSCAR exports inside the app describe the configured **ideal bulk supercell of the selected structure** (SC, BCC, FCC or HCP). HCP exports use the two-atom unit cell with ideal c/a. Comparison stacks, defects, reciprocal points and display ghosts are excluded.
 """
 
 DOWNLOAD = """\
 from pathlib import Path
 offline_file = Path('FCC-Explorer.html')
-offline_file.write_text(FCC_APP_HTML, encoding='utf-8')
+offline_file.write_bytes(FCC_APP_HTML.encode('utf-8'))
 try:
     from google.colab import files
 except ImportError:
@@ -139,7 +139,7 @@ def main(argv):
         raise SystemExit("Embedded payload does not round-trip.")
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(notebook, indent=1, ensure_ascii=True), encoding="utf-8")
+    target.write_bytes(json.dumps(notebook, indent=1, ensure_ascii=True).encode("utf-8"))
     print(f"Wrote {target} (embedded app SHA-256 {notebook['metadata']['fcc_app_sha256']})")
 
 

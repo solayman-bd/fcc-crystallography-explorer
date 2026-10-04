@@ -13,6 +13,7 @@ import http.server
 import threading
 import webbrowser
 from pathlib import Path
+from urllib.parse import quote
 
 
 def main():
@@ -27,7 +28,7 @@ def main():
 
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(page.parent))
     with http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler) as server:
-        url = f"http://127.0.0.1:{server.server_address[1]}/{page.name}"
+        url = f"http://127.0.0.1:{server.server_address[1]}/{quote(page.name)}"
         print(f"Serving {page.name} at {url}  (Ctrl+C to stop)")
         threading.Timer(0.5, webbrowser.open, [url]).start()
         try:

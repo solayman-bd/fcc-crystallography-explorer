@@ -75,7 +75,7 @@ export const toCartesian = (S, f) => combine(S.axes, f);
 export const toFractional = (S, p) => coordinatesIn(S.axes, p);
 
 /** Fractional coordinates of a site (equal to its position for the cubic structures). */
-export const fractionalOf = (site) => site.f ?? site.p;
+export const fractionalOf = (site, S = structureFor()) => site.f ?? toFractional(S, site.p);
 
 /** Plane normal G = h b₁ + k b₂ + l b₃ (units of 1/a); the slice value of X is G·X. */
 export const planeNormal = (S, hkl) => combine(S.reciprocal, hkl);

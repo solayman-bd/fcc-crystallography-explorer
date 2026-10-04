@@ -583,7 +583,7 @@ const STRUCTURE_CONCEPTS = {
       intro:
         "The A and B atoms at (0,0,0) and (⅓,⅔,½) scatter with phase 2π(h/3 + 2k/3 + l/2). When h + 2k is a multiple of 3 and l is odd they cancel, so (0001) is absent but (0002) is allowed.",
       equation: "|F/f| = |1 + e^(2πi(h/3 + 2k/3 + l/2))|",
-      view: "Purple nodes form the hexagonal reciprocal lattice. Grid units are 2π/a Å⁻¹; faint markers are forbidden positions, not reciprocal-lattice nodes.",
+      view: "Purple nodes mark allowed reflections of the hexagonal reciprocal lattice. Grid units are 2π/a Å⁻¹. Faint markers are also reciprocal-lattice nodes: their reflections vanish because the two-atom basis cancels the scattering. Enable extinct reflections to see the full lattice.",
       try: "Compare (0001), (0002) and (10−11), then change the wavelength and check λ≤2d.",
     },
   },

@@ -207,7 +207,13 @@ export function layerGeometry(hkl, a = 1, structure = "fcc") {
 
   // The in-plane lattice: an integer kernel of q, Gauss-reduced.
   const [k1, k2] = integerKernel(q);
-  const [t1, t2] = gaussReduce(combine(S.primitive, k1), combine(S.primitive, k2), k1, k2, G);
+  const [t1, t2, m1, m2] = gaussReduce(
+    combine(S.primitive, k1),
+    combine(S.primitive, k2),
+    k1,
+    k2,
+    G,
+  );
 
   // Basis atoms sort into layer classes by their slice value modulo Δs.
   const sigma = S.basis.map((f) => dot(n, f));
@@ -239,6 +245,8 @@ export function layerGeometry(hkl, a = 1, structure = "fcc") {
     layersPerStep: M,
     t1,
     t2,
+    m1,
+    m2,
   };
 
   // Lattice shift: from one lattice layer to the next, in the plane, as t1, t2 fractions.
@@ -451,7 +459,7 @@ function atomsInside(structure, inside, bounds) {
 }
 
 /** Polygon where the plane s = G·X cuts a cell, ordered around its centroid; [] if it misses. */
-function slicePolygon(cell, G, s) {
+export function slicePolygon(cell, G, s) {
   const points = [];
   const addPoint = (point) => {
     if (!points.some((existing) => norm(subtract(point, existing)) < 1e-7)) {
@@ -646,6 +654,38 @@ export function stackPlan(geometry, layer, { maxLayers = 12, radius } = {}) {
     })),
   );
   return { cell, stack, layers, radius: r, points };
+}
+
+/**
+ * A finite patch of layer j for the 2D views: every atom of the layer at origin + i·t1 + k·t2
+ * (|i|, |k| ≤ repeat, one copy per basis atom in the layer). The origin is the layer's first
+ * atom, moved by net translations next to `center` when one is given.
+ */
+export function layerNet(geometry, layer, repeat, center = null) {
+  let seeds = layerSeeds(geometry, layer);
+  if (center) {
+    const [i, k] = inBasis(
+      inPlaneOf(geometry.normal, subtract(center, seeds[0])),
+      geometry.t1,
+      geometry.t2,
+    ).map(Math.round);
+    const shift = add(scale(geometry.t1, i), scale(geometry.t2, k));
+    seeds = seeds.map((seed) => add(seed, shift));
+  }
+  const points = [];
+  seeds.forEach((seed, b) => {
+    for (let i = -repeat; i <= repeat; i++) {
+      for (let k = -repeat; k <= repeat; k++) {
+        points.push({
+          id: `net:${i}:${k}${b ? `:${b}` : ""}`,
+          p: add(seed, add(scale(geometry.t1, i), scale(geometry.t2, k))),
+          ij: [i, k],
+          basis: b,
+        });
+      }
+    }
+  });
+  return { origin: seeds[0], points };
 }
 
 /** The lattice point of layer j closest to the normal line through `center`. */

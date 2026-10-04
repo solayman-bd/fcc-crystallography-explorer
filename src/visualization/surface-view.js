@@ -2,10 +2,95 @@
  * Analytic 2D view of one occupied atomic layer, drawn as SVG.
  */
 
-import { layerGeometry } from "../crystal/layers.js";
-import { add, dot, formatNumber, formatVector, scale, subtract } from "../crystal/math.js";
+import { meshVectorsOf, structureFor } from "../crystal/bulk.js";
+import { layerForState, layerGeometry, layerNet, layerS } from "../crystal/layers.js";
+import {
+  add,
+  dot,
+  formatNumber,
+  formatVector,
+  gcdOf,
+  norm,
+  scale,
+  subtract,
+} from "../crystal/math.js";
 import { planeInfo, planeLevel } from "../crystal/planes.js";
 import { cubicMeshVectors, layerOffset, surfaceCell, surfaceNet } from "../crystal/surfaces.js";
+
+/** The FCC layer, its primitive cell and its in-plane bonds (the original construction). */
+function fccModel(state) {
+  const cell = surfaceCell(state.hkl, state.a);
+  const step = planeInfo(state.hkl).step;
+  const level = planeLevel(state.hkl, state.N, state.location, state.c, state.layer);
+  const layer = Math.round(level / step);
+  const origin = layerOffset(state.hkl, layer);
+  const net = surfaceNet(cell, state.netRepeat, origin);
+  return {
+    cell,
+    net,
+    origin,
+    radius: state.radiusMode === "physical" ? 1 / (2 * Math.sqrt(2)) : state.radius,
+    mesh: cubicMeshVectors(state.hkl),
+    meshName: "cubic mesh",
+    bonds() {
+      const pairs = [];
+      const byKey = new Map(net.map((point) => [formatVector(point.p, 7), point]));
+      for (const point of net) {
+        for (const shift of cell.neighbors) {
+          const neighbor = byKey.get(formatVector(add(point.p, shift), 7));
+          if (neighbor && point.id < neighbor.id) {
+            pairs.push([point, neighbor]);
+          }
+        }
+      }
+      return pairs;
+    },
+    title: `FCC (${formatVector(state.hkl)}) · ${layerGeometry(state.hkl).type.replace("-", " ")} net · layer ${layer} · c=${formatNumber(layer * step)}`,
+    density: cell.density,
+  };
+}
+
+/** The same for simple cubic, BCC or HCP, from the general layer engine. */
+function structureModel(state) {
+  const S = structureFor(state.structure);
+  const layers = layerGeometry(state.hkl, 1, S);
+  const layer = layerForState(layers, state);
+  const { origin, points: net } = layerNet(layers, layer, state.netRepeat);
+  const a = state.a;
+  const cell = {
+    t1: layers.t1,
+    t2: layers.t2,
+    ex: layers.frame.e1,
+    ey: layers.frame.e2,
+    lengths: layers.lengths.map((length) => length * a),
+    angle: layers.angle,
+    area: layers.area * a * a,
+    coordination: layers.coordination,
+  };
+  const twoAtoms = layers.atomsPerCell > 1 ? `, ${layers.atomsPerCell} atoms per cell` : "";
+  return {
+    cell,
+    net,
+    origin,
+    radius: state.radiusMode === "physical" ? S.physicalRadius : state.radius,
+    mesh: meshVectorsOf(S, state.hkl),
+    meshName: S.hexagonal ? "a₁, a₂, c mesh" : "cubic mesh",
+    bonds() {
+      const pairs = [];
+      for (let i = 0; i < net.length; i++) {
+        for (let j = i + 1; j < net.length; j++) {
+          const distance = norm(subtract(net[i].p, net[j].p));
+          if (Math.abs(distance - layers.neighborDistance) < 1e-7) {
+            pairs.push([net[i], net[j]]);
+          }
+        }
+      }
+      return pairs;
+    },
+    title: `${S.short} (${layers.label}) · ${layers.type.replace("-", " ")} net${twoAtoms} · layer ${layer} · c=${formatNumber(layerS(layers, layer) * gcdOf(state.hkl))}`,
+    density: layers.density / (a * a),
+  };
+}
 
 /**
  * Projects one atomic layer onto e1 = t1/|t1| and e2 = n̂ × e1 and draws the net,
@@ -62,12 +147,8 @@ export class SurfaceView {
   draw(state, selection) {
     this.state = state;
     this.selected = selection;
-    const cell = surfaceCell(state.hkl, state.a);
-    const step = planeInfo(state.hkl).step;
-    const level = planeLevel(state.hkl, state.N, state.location, state.c, state.layer);
-    const layer = Math.round(level / step);
-    const origin = layerOffset(state.hkl, layer);
-    const net = surfaceNet(cell, state.netRepeat, origin);
+    const model = state.structure === "fcc" ? fccModel(state) : structureModel(state);
+    const { cell, net, origin } = model;
     const coords = net.map((point) => [
       dot(subtract(point.p, origin), cell.ex),
       dot(subtract(point.p, origin), cell.ey),
@@ -107,23 +188,17 @@ export class SurfaceView {
     }
 
     if (state.bonds2d) {
-      const byKey = new Map(net.map((point) => [formatVector(point.p, 7), point]));
-      for (const point of net) {
-        for (const step of cell.neighbors) {
-          const neighbor = byKey.get(formatVector(add(point.p, step), 7));
-          if (neighbor && point.id < neighbor.id) {
-            const from = project(subtract(point.p, origin));
-            const to = project(subtract(neighbor.p, origin));
-            parts.push(
-              `<line x1="${from[0]}" y1="${from[1]}" x2="${to[0]}" y2="${to[1]}" stroke="#aec3ce" stroke-width="1.4"/>`,
-            );
-          }
-        }
+      for (const [point, neighbor] of model.bonds()) {
+        const from = project(subtract(point.p, origin));
+        const to = project(subtract(neighbor.p, origin));
+        parts.push(
+          `<line x1="${from[0]}" y1="${from[1]}" x2="${to[0]}" y2="${to[1]}" stroke="#aec3ce" stroke-width="1.4"/>`,
+        );
       }
     }
 
     if (state.conventional) {
-      const [u, v] = cubicMeshVectors(state.hkl);
+      const [u, v] = model.mesh;
       drawCell([0, 0, 0], u, v, "#5185a0", "#5185a010", "8 5");
     }
 
@@ -134,12 +209,11 @@ export class SurfaceView {
     if (state.atoms) {
       net.forEach((point, index) => {
         const [x, y] = project(subtract(point.p, origin));
-        const radius =
-          (state.radiusMode === "physical" ? 1 / (2 * Math.sqrt(2)) : state.radius) * pixels;
+        const radius = model.radius * pixels;
         const selected =
           selection?.space === "surface"
             ? selection.id === point.id
-            : point.ij.every((value) => value === 0);
+            : point.ij.every((value) => value === 0) && !point.basis;
         parts.push(
           `<circle data-site="${index}" cx="${x}" cy="${y}" r="${Math.max(2, radius)}" fill="${selected ? state.selectedColor : state.color}" opacity="${state.opacity}" stroke="${selected ? state.selectedColor : "white"}" stroke-width="${selected ? 3 : 1.4}"><title>${point.id}: (${formatVector(point.p)})</title></circle>`,
         );
@@ -163,7 +237,7 @@ export class SurfaceView {
     }
 
     parts.push(
-      `<rect x="20" y="16" width="860" height="60" rx="10" fill="#eef3f5"/><text x="35" y="41" font-family="system-ui" font-size="18" font-weight="600" fill="#2c4d63">FCC (${formatVector(state.hkl)}) · ${layerGeometry(state.hkl).type.replace("-", " ")} net · layer ${layer} · c=${formatNumber(layer * step)}</text><text x="35" y="63" font-family="system-ui" font-size="12" fill="#7792a2">Analytic orthogonal projection onto e₁=t₁/|t₁| and e₂=n̂ × e₁.</text><text x="36" y="599" font-family="system-ui" font-size="12" fill="#628192">Hosts: circles · selected: larger outline · primitive cell: filled · cubic mesh: dashed</text><rect x="20" y="616" width="860" height="65" rx="12" fill="white"/><text x="36" y="642" font-family="system-ui" font-size="14" fill="#385c72">|t₁|=${formatNumber(cell.lengths[0])} Å     |t₂|=${formatNumber(cell.lengths[1])} Å     angle=${formatNumber(cell.angle, 2)}°     area=${formatNumber(cell.area)} Å²</text><text x="36" y="664" font-family="system-ui" font-size="12" fill="#7792a2">${cell.coordination} nearest neighbors in this layer · density ${formatNumber(cell.density, 5)} Å⁻²</text></svg>`,
+      `<rect x="20" y="16" width="860" height="60" rx="10" fill="#eef3f5"/><text x="35" y="41" font-family="system-ui" font-size="18" font-weight="600" fill="#2c4d63">${model.title}</text><text x="35" y="63" font-family="system-ui" font-size="12" fill="#7792a2">Analytic orthogonal projection onto e₁=t₁/|t₁| and e₂=n̂ × e₁.</text><text x="36" y="599" font-family="system-ui" font-size="12" fill="#628192">Hosts: circles · selected: larger outline · primitive cell: filled · ${model.meshName}: dashed</text><rect x="20" y="616" width="860" height="65" rx="12" fill="white"/><text x="36" y="642" font-family="system-ui" font-size="14" fill="#385c72">|t₁|=${formatNumber(cell.lengths[0])} Å     |t₂|=${formatNumber(cell.lengths[1])} Å     angle=${formatNumber(cell.angle, 2)}°     area=${formatNumber(cell.area)} Å²</text><text x="36" y="664" font-family="system-ui" font-size="12" fill="#7792a2">${cell.coordination} nearest neighbors in this layer · density ${formatNumber(model.density, 5)} Å⁻²</text></svg>`,
     );
     this.svg = parts.join("");
     this.host.innerHTML = this.svg;

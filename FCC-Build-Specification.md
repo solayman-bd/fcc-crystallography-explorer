@@ -75,7 +75,7 @@ My acceptance checks: d, the primitive net, the area per atom and N for (001), (
 
 ## Later addition: simple cubic, BCC and HCP, and primitive ⇄ 2D
 
-I extended the animations from FCC to four structures, chosen in the player and in the panel's Animate section (state key `animStructure`, default FCC, so older saved views still load):
+I extended the animations from FCC to four structures (the structure is now chosen once for the whole app; see the next section):
 
 | Structure | Lattice + basis | Conventional cell | Primitive cell |
 |---|---|---|---|
@@ -93,15 +93,37 @@ Two new modes walk the full path:
 4. **Primitive → 3D → 2D**: the primitive cell with a₁, a₂, a₃ (a₁, a₂, c) and its atoms → the conventional cell → a 3D array of cells (3 × 3 × 3 cubes, or 7 hexagonal prisms × 3 stories) → the array sliced by (hkl), colored by registry → the layers pulled apart along the normal (seen along the lattice rows t₁) → one layer face-on → the layer grown into the infinite net with t₁, t₂.
 5. **2D → 3D → primitive**: the same path backwards, ending with auto-rotation on the primitive cell.
 
-The camera fits each step of these modes to the atoms it shows. SC and BCC cells are seen from further off the body diagonal than FCC, because BCC atoms line up along ⟨111⟩. For FCC, the hand-off to the Surface net view stays; the Surface net, Crystal, Stacking and Reciprocal workspaces stay FCC.
+The camera fits each step of these modes to the atoms it shows. SC and BCC cells are seen from further off the body diagonal than FCC, because BCC atoms line up along ⟨111⟩. For every structure, the last 3D step hands off to the Surface net view in the same orientation.
 
 My acceptance checks: SC, BCC and HCP tables (d, net lengths and angle, N, net type) for their low-index planes; HCP (0001) ABAB with d = c/2, (10−10) gaps a√3/6 and a√3/3 with ABCD, (11−20) 2 atoms per cell. For every structure and every index triple within ±3: area × lattice-layer step = primitive volume, N·d̄ = the shortest lattice vector along G, the selected layer holds balls of its cell, and the stack fills one cell with exactly 8, 9, 14 or 17 balls. The 3D arrays hold 64, 91, 172 and 187 atoms, and the primitive cells 8, 8, 8 and 9 balls. FCC results are identical to the FCC-only engine on 734 planes. The browser smoke test runs all five modes for all four structures on four planes, and the tour has a lesson for every mode and for BCC and HCP.
+
+## Later addition: one structure for the whole app
+
+The structure choice used to sit in the animation player and the Surface crystallography panel, while everything else stayed FCC. That was confusing: you could pick HCP there and still see an FCC cube in the Crystal view. I moved the choice to the top of **Crystal & unit cells** (state key `structure`, default `fcc`; older saved views with `animStructure` still load). Every topic, workspace, calculation, Verify check and export now follows it, and the player only shows which structure is active.
+
+`bulk.js` gives each structure the same interface the FCC modules had: drawing sites, neighbor shells, holes, plane and direction geometry, the Wigner–Seitz cell, slip systems, partials and diffraction. For FCC it calls the original FCC modules, so FCC output stays exactly the same.
+
+| | Simple cubic | BCC | HCP (ideal) |
+|---|---|---|---|
+| Example metal | α-Po, a = 3.35 Å | α-Fe, a = 2.8665 Å | Mg, a = 3.21 Å |
+| Cell drawn | cube, 8 sites, 1 atom | cube, 9 sites, 2 atoms | hexagonal prism, 17 sites, 6 atoms (option: the a₁, a₂, c unit cell, 9 sites, 2 atoms) |
+| Neighbor shells | 6, 12, 8 | 8, 6, 12 | 12, 6, 2 (the same from A and B atoms) |
+| First-shell hull | octahedron | cube | anticuboctahedron |
+| Holes | 1 cubic hole, r/R = √3 − 1 | 6 octahedral (2/√3 − 1), 12 tetrahedral (√(5/3) − 1) | 2 octahedral, 4 tetrahedral per unit cell |
+| Wigner–Seitz cell | cube | truncated octahedron | hexagonal prism |
+| Slip | {100}⟨010⟩, 6 | {110}⟨111⟩, 12 | basal 3 + prismatic 3 + pyramidal 6 ⟨a⟩ |
+| Partials | none | none | a/3[11−20] = a/3[10−10] + a/3[01−10] |
+| Reciprocal lattice | simple cubic | FCC, h + k + l even | hexagonal; absent when h + 2k = 3n and l odd |
+
+Switching structure loads the example metal and lattice parameter unless I have typed my own, sets the neighbor cutoff just past the third shell (as FCC's 1.25 a does), keeps the hole and slip choices only where they exist, and resets an HCP plane to (0001) unless it is already an HCP pick. A message says what changed. The camera fit uses a view direction per structure, so the BCC body center is not hidden behind a corner atom. The Learn text, presets, search and Calculate tables use the selected structure's own words and numbers. The guided tour stays FCC with its BCC and HCP lessons.
+
+The Verify tab runs 26 checks for FCC, 22 for simple cubic and BCC, and 23 for HCP. My acceptance checks: every preset for every structure passes all its Verify checks; all workspaces, exports, Save/Load and the tour run for every structure; the HCP prism shows 17 sites and the unit cell 9; and a differential test against the previous build compares the visible text, the exports, the report, the surface SVG and a fingerprint of the 3D scene for 117 FCC scenarios. Only the two presets that now switch structure differ.
 
 ## Output rules
 
 - PNG exports the current view. SVG exports the analytic surface net.
 - Reports include the parameters, equations, derived values, state and checks.
-- XYZ/CIF/POSCAR export the unique atoms of the configured ideal **bulk FCC supercell**, whatever comparison workspace is open. They leave out ghosts and non-atomic overlays, use explicit supercell fractional coordinates, and say so in their label.
+- XYZ/CIF/POSCAR export the unique atoms of the configured ideal **bulk supercell** of the selected structure (HCP: a₁, a₂, c cells with γ = 120°), whatever comparison workspace is open. They leave out ghosts and non-atomic overlays, use explicit supercell fractional coordinates, and say so in their label.
 - CIF uses P1 with all unique positions, so it makes no symmetry claims the app hasn't checked.
 
 ## My release checklist

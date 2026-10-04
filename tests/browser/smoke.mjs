@@ -36,21 +36,97 @@ await page.waitForFunction(() => window.FCC_EXPLORER);
 const result = await page.evaluate(async () => {
   const api = window.FCC_EXPLORER;
   const failures = [];
-  const presets = [...document.querySelectorAll("[data-preset]")].map((b) => b.dataset.preset);
-  for (const key of new Set(presets)) {
-    api.preset(key);
+  const panelsFilled = (tag) => {
     for (const tab of ["learn", "calculate", "verify", "layers"]) {
       api.setState({ tab });
       if (!document.querySelector("#content").textContent.trim())
-        failures.push(`${key}/${tab}: empty panel`);
+        failures.push(`${tag}/${tab}: empty panel`);
     }
+  };
+  const checksPass = (tag) => {
     const failed = api.verify().filter((check) => !check.pass);
-    if (failed.length) failures.push(`${key}: ${failed.map((c) => c.name).join(", ")}`);
+    if (failed.length) failures.push(`${tag}: ${failed.map((c) => c.name).join(", ")}`);
+  };
+  // Choose a structure the way a user does: the selector in Crystal & unit cells.
+  const chooseStructure = (key) => {
+    api.setState({ topic: "crystal", workspace: "crystal" });
+    const select = document.querySelector('#controls select[data-key="structure"]');
+    select.value = key;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    if (api.getState().structure !== key) failures.push(`structure selector: ${key}`);
+  };
+
+  // Every preset for every structure that offers it: panels filled and every check passing.
+  const presetKeys = new Set();
+  for (const key of ["sc", "bcc", "fcc", "hcp"]) {
+    chooseStructure(key);
+    const presets = [...document.querySelectorAll("[data-preset]")].map((b) => b.dataset.preset);
+    for (const preset of new Set(presets)) {
+      presetKeys.add(preset);
+      chooseStructure(key);
+      api.preset(preset);
+      const structure = api.getState().structure;
+      if (!["animBcc", "animHcp"].includes(preset) && structure !== key)
+        failures.push(`${key} ${preset}: structure became ${structure}`);
+      panelsFilled(`${key} ${preset}`);
+      checksPass(`${key} ${preset}`);
+    }
+
+    // Every workspace and topic draws without errors, with the structure in the heading.
+    chooseStructure(key);
+    for (const [topic, workspace] of [
+      ["crystal", "crystal"],
+      ["geometry", "crystal"],
+      ["surface", "surface"],
+      ["surface", "animation"],
+      ["stacking", "stacking"],
+      ["environment", "crystal"],
+      ["slip", "crystal"],
+      ["reciprocal", "reciprocal"],
+    ]) {
+      api.setState({
+        topic,
+        workspace,
+        plane: true,
+        direction: true,
+        neighbors: true,
+        holes: "both",
+        slip: true,
+        allSlip: true,
+        partials: true,
+        ws: true,
+        primitive: true,
+        surface: true,
+        clip: true,
+      });
+      panelsFilled(`${key} ${topic}/${workspace}`);
+      if (!document.querySelector("#eyebrow").textContent.startsWith(key.toUpperCase()))
+        failures.push(`${key} ${topic}: heading does not name the structure`);
+    }
+
+    // Exports: the unique atoms of the unit-cell supercell.
+    api.setState({ N: [2, 1, 1], hexPrism: false });
+    const perCell = { sc: 1, bcc: 2, fcc: 4, hcp: 2 }[key];
+    const xyz = api.structure("xyz").trim().split("\n");
+    if (Number(xyz[0]) !== 2 * perCell) failures.push(`${key} XYZ atom count ${xyz[0]}`);
+    if (!api.structure("cif").includes("_cell_angle_gamma")) failures.push(`${key} CIF`);
+    if (!api.report().includes("## Verification")) failures.push(`${key} report`);
+    api.setState({ N: [1, 1, 1] });
   }
+
+  // The HCP crystal view: the hexagonal prism (17 sites) or the unit cell (9 sites).
+  chooseStructure("hcp");
+  api.setState({ topic: "crystal", workspace: "crystal", hexPrism: true, mode: "closed" });
+  if (api.viewer && api.viewer.count !== 17)
+    failures.push(`HCP prism draws ${api.viewer.count} sites`);
+  api.setState({ hexPrism: false });
+  if (api.viewer && api.viewer.count !== 9)
+    failures.push(`HCP unit cell draws ${api.viewer.count} sites`);
+
   // The five Cell ⇄ Net animations load for every structure and several planes, and the
   // Build stack fills one cell with 8 / 9 / 14 / 17 balls.
   const balls = { sc: 8, bcc: 9, fcc: 14, hcp: 17 };
-  for (const animStructure of Object.keys(balls)) {
+  for (const structure of Object.keys(balls)) {
     for (const mode of ["deconstruct", "build", "primitive", "primToNet", "netToPrim"]) {
       for (const hkl of [
         [0, 0, 1],
@@ -58,25 +134,20 @@ const result = await page.evaluate(async () => {
         [2, 1, 0],
         [1, 0, 1],
       ]) {
-        api.setState({
-          topic: "surface",
-          workspace: "animation",
-          animStructure,
-          animMode: mode,
-          hkl,
-        });
+        api.setState({ topic: "surface", workspace: "animation", structure, animMode: mode, hkl });
         const info = api.animation();
-        const tag = `${animStructure} ${mode} ${hkl}`;
-        if (!info || info.mode !== mode || info.structure !== animStructure || info.total < 4)
+        const tag = `${structure} ${mode} ${hkl}`;
+        if (!info || info.mode !== mode || info.structure !== structure || info.total < 4)
           failures.push(`animation ${tag}`);
-        if (mode === "build" && info?.ballsInCell !== balls[animStructure])
+        if (mode === "build" && info?.ballsInCell !== balls[structure])
           failures.push(`build ${tag}: ${info?.ballsInCell} balls`);
         if (!document.querySelector("#anim-caption")?.textContent.trim())
           failures.push(`caption ${tag}`);
       }
     }
   }
-  api.setState({ animStructure: "fcc" });
+
+  chooseStructure("fcc");
   document.querySelector("#tour").click();
   const lessons = document.querySelector("#lessons progress").max;
   for (let i = 1; i < lessons; i++) document.querySelector(`#lessons [data-lesson="${i}"]`).click();
@@ -86,12 +157,14 @@ const result = await page.evaluate(async () => {
   if (Number(xyz[0]) !== 4 * api.getState().N.reduce((a, b) => a * b))
     failures.push("XYZ atom count");
   if (!api.report().includes("## Verification")) failures.push("report");
+  chooseStructure("bcc");
   const config = api.exportConfig();
   api.preset("basic");
+  chooseStructure("fcc");
   api.loadConfig(JSON.parse(JSON.stringify(config)));
   if (JSON.stringify(api.getState()) !== JSON.stringify(config.state))
     failures.push("save/load round trip");
-  return { presets: new Set(presets).size, failures, webgl: Boolean(api.viewer) };
+  return { presets: presetKeys.size, failures, webgl: Boolean(api.viewer) };
 });
 await browser.close();
 

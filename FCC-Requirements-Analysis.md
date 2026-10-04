@@ -31,14 +31,16 @@ My main goal is understanding. A learner should be able to ask a question, set u
 | Neighbors in a finite drawing get cut off at the boundaries | I enumerate infinite bulk FCC translations around the selected host, including images outside the box. |
 | Surface coordination has several meanings | I report the shortest-neighbor count **within one layer** separately from bulk 12-fold coordination. I don't claim the coordination of a relaxed, terminated surface. |
 | "Any important FCC concept" is not a finite acceptance criterion | I use concrete invariants and representative learning tasks, with an explicit line where advanced features begin. |
-| Exports could pick up ghosts, holes, HCP comparisons or reciprocal points | XYZ/CIF/POSCAR always export the configured ideal **bulk FCC** supercell with unique periodic atoms. The export labels say so. |
+| Exports could pick up ghosts, holes, stacking comparisons or reciprocal points | XYZ/CIF/POSCAR always export the configured ideal **bulk** supercell of the selected structure with unique periodic atoms. The export labels say so. |
 | Two separate implementations would drift apart | Both editions carry the same bundled HTML and core. The notebook checks a SHA-256 hash to confirm they are identical. |
 
 The additions I found most useful: a misconception panel, linked concept search, the numerical derivation next to each picture, an 18-step tour, explicit periodic wrapping, direct distances between two selections, reproducible view files and an independent Verify panel. All of them are in the app.
 
 A later addition: a step-by-step "3D cell ⇄ 2D net" animation for any plane, in three modes (cutting the cube into layers and flattening one into the net, stacking nets back into the cube, and shrinking conventional cells to primitive ones). It reuses the same engine, renderer and Surface net frame, so its last 3D step hands off to the 2D view in the same orientation.
 
-A second addition extends those animations beyond FCC. They now work for simple cubic, BCC and HCP too, and two more modes walk the whole path in both directions: primitive cell → conventional cell → 3D array of cells → the array sliced into (hkl) layers → one 2D layer, and back. Only the Cell ⇄ Net workspace knows about the other structures; the Crystal, Surface net, Stacking and Reciprocal workspaces, the exports and the FCC checks stay FCC.
+A second addition extends those animations beyond FCC. They now work for simple cubic, BCC and HCP too, and two more modes walk the whole path in both directions: primitive cell → conventional cell → 3D array of cells → the array sliced into (hkl) layers → one 2D layer, and back.
+
+A third addition makes the structure a choice for the whole app. At first only the Cell ⇄ Net animations knew about the other structures, and the choice sat in the player and the Surface crystallography panel. That was misleading: a learner could pick HCP there and still see the FCC cube everywhere else. Now the structure (simple cubic, BCC, FCC or HCP) is chosen at the top of Crystal & unit cells, and the Crystal, Surface net, Cell ⇄ Net, Stacking and Reciprocal workspaces, the neighbors, holes, slip and diffraction, the Learn text, the Verify checks and the exports all follow it. FCC stays the default, and its output is unchanged.
 
 ## 2. Prioritized requirements
 

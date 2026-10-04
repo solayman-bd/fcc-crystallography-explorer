@@ -133,7 +133,7 @@ export class CellNetAnimation {
     this.viewer = viewer;
     this.state = state;
     this.mode = state.animMode;
-    this.structure = structureOf(state.animStructure);
+    this.structure = structureOf(state.structure);
     this.oblique = ["sc", "bcc"].includes(this.structure.key) ? OBLIQUE_CUBIC : OBLIQUE;
     this.layer = layer;
     this.speed = state.animSpeed;
@@ -902,12 +902,10 @@ export class CellNetAnimation {
       );
       step(
         "Flatten to 2D",
-        fcc
-          ? `This is the Surface net 2D view of layer ${layer}: same orientation, e₁ along t₁. Open it to measure, label and export.`
-          : `Layer ${layer} as a flat 2D net, seen face-on: e₁ along t₁, every distance true.`,
+        `This is the Surface net 2D view of layer ${layer}: same orientation, e₁ along t₁. Open it to measure, label and export.`,
         s7,
         netView(2.1 * this.netRadius),
-        { handoff: fcc },
+        { handoff: true },
       );
     }
 
@@ -1170,10 +1168,10 @@ export class CellNetAnimation {
         );
         step(
           "2D array",
-          `Repeat the layer in the plane: ${netText}; area ${f3(g.area * a * a)} Å².${fcc ? " Open it in the Surface net to measure and export." : ""}`,
+          `Repeat the layer in the plane: ${netText}; area ${f3(g.area * a * a)} Å². Open it in the Surface net to measure and export.`,
           vNet,
           flatView,
-          { handoff: fcc },
+          { handoff: true },
         );
       } else {
         step(

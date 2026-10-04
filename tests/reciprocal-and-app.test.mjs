@@ -10,7 +10,7 @@ import {
   structureFactor,
 } from "../src/crystal/reciprocal.js";
 import { runChecks } from "../src/crystal/verify.js";
-import { CONCEPTS, LESSONS, PRESETS, TOPICS } from "../src/education/concepts.js";
+import { CONCEPTS, LESSONS, PRESETS, TOPICS, conceptFor } from "../src/education/concepts.js";
 import { calculationReport, structureFile } from "../src/exports.js";
 import { DEFAULT_STATE, validateState } from "../src/state.js";
 
@@ -128,22 +128,41 @@ test("teaching content is consistent", () => {
   assert.deepEqual(modes.sort(), ["build", "deconstruct", "netToPrim", "primToNet", "primitive"]);
   for (const structure of ["bcc", "hcp"]) {
     assert.ok(
-      patches.some((patch) => patch.animStructure === structure),
+      LESSONS.some(([, , preset]) => PRESETS[preset].structure === structure),
       structure,
     );
   }
-  // A saved view from before the animation (or before its structures) existed still loads.
-  const { animMode, animSpeed, animStructure, ...older } = DEFAULT_STATE;
+  // A saved view from before the animation (or before the structure setting) still loads, and
+  // a view saved while the structure was an animation-only setting keeps its structure.
+  const { animMode, animSpeed, structure, hexPrism, ...older } = DEFAULT_STATE;
   assert.equal(validateState(older).animMode, "deconstruct");
-  assert.equal(validateState(older).animStructure, "fcc");
+  assert.equal(validateState(older).structure, "fcc");
+  assert.equal(validateState({ ...older, animStructure: "bcc" }).structure, "bcc");
   assert.throws(() => validateState({ ...DEFAULT_STATE, animSpeed: 3 }));
-  assert.throws(() => validateState({ ...DEFAULT_STATE, animStructure: "diamond" }));
+  assert.throws(() => validateState({ ...DEFAULT_STATE, structure: "diamond" }));
   for (const [, , concept] of TOPICS) assert.ok(CONCEPTS[concept]);
   for (const [key, concept] of Object.entries(CONCEPTS)) {
     for (const related of concept.related) assert.ok(CONCEPTS[related], `${key} → ${related}`);
   }
+  // Every preset is valid for every structure it is offered for, with its variants.
   for (const preset of Object.values(PRESETS)) {
     assert.ok(CONCEPTS[preset.concept]);
-    validateState({ ...DEFAULT_STATE, ...preset.patch });
+    for (const key of preset.structures ?? ["sc", "bcc", "fcc", "hcp"]) {
+      validateState({
+        ...DEFAULT_STATE,
+        structure: key,
+        ...preset.patch,
+        ...preset.variants?.[key],
+      });
+    }
+  }
+  // Every concept has text for every structure.
+  for (const key of Object.keys(CONCEPTS)) {
+    for (const structureKey of ["sc", "bcc", "fcc", "hcp"]) {
+      const text = conceptFor(key, structureKey);
+      for (const field of ["title", "question", "intro", "equation", "view", "confusion", "try"]) {
+        assert.ok(text[field], `${key} ${structureKey} ${field}`);
+      }
+    }
   }
 });

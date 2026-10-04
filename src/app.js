@@ -3,7 +3,29 @@
  * Holds the current settings, renders every panel from them and handles user input.
  */
 
-import { neighborShells } from "./crystal/environment.js";
+import {
+  braggTableOf,
+  directionOf,
+  prismSites,
+  directionText,
+  directionVector,
+  familyOf,
+  fractionalOf,
+  isTranslation,
+  metricsOf,
+  neighborsOf,
+  partialsOf,
+  planeLevelOf,
+  planeNormal,
+  planeOf,
+  planeText,
+  reflectionOf,
+  regionOf,
+  shellDistances,
+  sitesOf,
+  slipSystemsOf,
+  surfaceOf,
+} from "./crystal/bulk.js";
 import {
   cellAround,
   classifyCut,
@@ -14,15 +36,8 @@ import {
   stackingLetters,
 } from "./crystal/layers.js";
 import {
-  directionInfo,
-  isLatticeTranslation,
-  latticeMetrics,
-  latticeSites,
-} from "./crystal/lattice.js";
-import {
   add,
   angleBetween,
-  cubicFamily,
   dot,
   formatNumber,
   formatVector,
@@ -34,12 +49,14 @@ import {
   scale,
   subtract,
 } from "./crystal/math.js";
-import { planeInfo, planeLevel } from "./crystal/planes.js";
-import { braggTable, reflectionInfo } from "./crystal/reciprocal.js";
-import { SHOCKLEY_EXAMPLE, slipSystems } from "./crystal/slip.js";
 import { STACKINGS, buildStack } from "./crystal/stacking.js";
-import { STRUCTURES, STRUCTURE_KEYS, fromMillerBravais } from "./crystal/structures.js";
-import { surfaceCell } from "./crystal/surfaces.js";
+import {
+  EXAMPLES,
+  STRUCTURES,
+  STRUCTURE_KEYS,
+  fromBravaisDirection,
+  fromMillerBravais,
+} from "./crystal/structures.js";
 import { runChecks } from "./crystal/verify.js";
 import {
   CONCEPTS,
@@ -48,6 +65,8 @@ import {
   PRESETS,
   REFERENCES,
   TOPICS,
+  conceptFor,
+  presetTitle,
 } from "./education/concepts.js";
 import { calculationReport, download, structureFile } from "./exports.js";
 import { DEFAULT_STATE, validateState } from "./state.js";
@@ -87,11 +106,24 @@ function stopAnimation() {
   animationTimer = null;
 }
 
-/** The structure the panels describe: the animation's in the Cell ⇄ Net workspace, else FCC. */
-const structureKey = (s = state) => (s.workspace === "animation" ? s.animStructure : "fcc");
+/** The selected crystal structure (Crystal & unit cells), as its data object. */
+const structure = (s = state) => STRUCTURES[s.structure];
 
 /** Layers of the current plane in that structure. */
-const planeLayers = (s = state) => layerGeometry(s.hkl, s.a, structureKey(s));
+const planeLayers = (s = state) => layerGeometry(s.hkl, s.a, s.structure);
+
+/**
+ * A look-along direction as a Cartesian vector: [u v w] of the structure in the crystal and
+ * animation views; the stacking and reciprocal views take the indices as their own axes.
+ */
+const lookVector = (uvw) =>
+  ["stacking", "reciprocal"].includes(state.workspace) ? uvw : directionVector(structure(), uvw);
+
+/** Plane and direction indices for text: as typed for cubic, (h k i l) / [u v t w] for HCP. */
+const planeName = (hkl, s = state) =>
+  structure(s).hexagonal ? planeText(structure(s), hkl) : fmtVec(hkl);
+const directionName = (uvw, s = state) =>
+  structure(s).hexagonal ? directionText(structure(s), uvw) : fmtVec(uvw);
 
 /** The occupied layer the surface net and the animation actually show (nearest to the plane). */
 function currentLayer(s = state) {
@@ -112,8 +144,10 @@ const netText = (layers) =>
 /** The heading question; the surface and animation questions follow the current plane. */
 function headerQuestion() {
   if (concept === "surface") {
-    const type = layerGeometry(state.hkl).type.replace("-", " ");
-    return `Why is FCC(${millerLabel(state.hkl)}) ${/^[aeiou]/.test(type) ? "an" : "a"} ${type} surface net?`;
+    const layers = planeLayers();
+    const type = layers.type.replace("-", " ");
+    const plane = state.structure === "fcc" ? millerLabel(state.hkl) : layers.label;
+    return `Why is ${structure().short}(${plane}) ${/^[aeiou]/.test(type) ? "an" : "a"} ${type} surface net?`;
   }
 
   if (concept === "cellnet") {
@@ -129,7 +163,11 @@ function headerQuestion() {
     }[state.animMode];
   }
 
-  return CONCEPTS[concept].question;
+  if (concept === "crystal" && structure().hexagonal && !state.hexPrism) {
+    return "Why does the HCP unit cell hold two atoms?";
+  }
+
+  return conceptFor(concept, state.structure).question;
 }
 
 /** Player bar under the 3D view in the Cell ⇄ Net workspace. */
@@ -142,7 +180,7 @@ function renderPlayer() {
   }
 
   $("#player").innerHTML =
-    `<div class="player-row"><select data-key="animStructure" aria-label="Crystal structure">${STRUCTURE_KEYS.map((key) => `<option value="${key}" ${state.animStructure === key ? "selected" : ""}>${STRUCTURES[key].short}</option>`).join("")}</select><select data-key="animMode" aria-label="Animation mode">${ANIMATION_MODES.map(([key, title]) => `<option value="${key}" ${state.animMode === key ? "selected" : ""}>${title}</option>`).join("")}</select><span id="anim-step"></span><label class="speed">Speed <select data-key="animSpeed" aria-label="Animation speed">${[0.5, 1, 2].map((speed) => `<option value="${speed}" ${state.animSpeed === speed ? "selected" : ""}>${speed}×</option>`).join("")}</select></label></div>` +
+    `<div class="player-row"><span class="structure-chip" title="Change the structure in Crystal & unit cells">${structure().short}</span><select data-key="animMode" aria-label="Animation mode">${ANIMATION_MODES.map(([key, title]) => `<option value="${key}" ${state.animMode === key ? "selected" : ""}>${title}</option>`).join("")}</select><span id="anim-step"></span><label class="speed">Speed <select data-key="animSpeed" aria-label="Animation speed">${[0.5, 1, 2].map((speed) => `<option value="${speed}" ${state.animSpeed === speed ? "selected" : ""}>${speed}×</option>`).join("")}</select></label></div>` +
     '<p id="anim-caption" aria-live="polite"></p>' +
     `<div class="player-row"><button data-anim="back" title="Previous step (←)">← Back</button><button data-anim="play" class="primary"></button><button data-anim="next" title="Next step (→)">Next →</button><input id="anim-scrub" type="range" min="0" max="${info.total - 1}" step="0.01" value="${info.position}" aria-label="Animation timeline"><button data-anim="replay" title="Replay from the start">↺ Replay</button><button data-anim="surface" class="handoff" hidden>Open in Surface net</button></div>`;
   updatePlayer(info);
@@ -171,7 +209,9 @@ function update(patch, { fit = false, controls = true, panel = true } = {}) {
     next.workspace !== state.workspace ||
     fmtVec(next.N) !== fmtVec(state.N) ||
     next.stack !== state.stack ||
-    next.primitiveOnly !== state.primitiveOnly
+    next.primitiveOnly !== state.primitiveOnly ||
+    next.structure !== state.structure ||
+    next.hexPrism !== state.hexPrism
   ) {
     selection = null;
     previousSelection = null;
@@ -183,8 +223,46 @@ function update(patch, { fit = false, controls = true, panel = true } = {}) {
   return structuredClone(state);
 }
 
+/**
+ * Settings that follow a structure change: the structure itself, an HCP plane when the current
+ * indices mean nothing on a₁, a₂, c, a neighbor cutoff that includes three shells, and a hole
+ * type the structure has. FCC gets exactly the defaults.
+ */
+function structureDefaults(key, s = DEFAULT_STATE) {
+  const S = STRUCTURES[key];
+  const patch = { structure: key };
+
+  // A lattice parameter and label still at the previous structure's example (Al 4.05 Å for
+  // FCC) follow to the new structure's example; values the user typed are kept.
+  const previous = EXAMPLES[s.structure];
+  if (previous && s.a === previous.a && s.element === previous.element) {
+    patch.a = EXAMPLES[key].a;
+    patch.element = EXAMPLES[key].element;
+  }
+
+  if (key === "fcc") {
+    return { ...patch, cutoff: DEFAULT_STATE.cutoff };
+  }
+
+  patch.cutoff = Math.ceil((shellDistances(S)[2] + 0.02) * 100) / 100;
+
+  if (S.hexagonal && !S.planes.some(([indices]) => indices === fmtVec(s.hkl))) {
+    patch.hkl = [0, 0, 1];
+  }
+
+  if (!["none", "both"].includes(s.holes) && !S.holes.some((hole) => hole.type === s.holes)) {
+    patch.holes = "both";
+  }
+
+  if (s.slipIndex >= S.slipCount) {
+    patch.slipIndex = 0;
+  }
+
+  return patch;
+}
+
 /** Apply a teaching preset (see PRESETS). */
-function applyPreset(key) {
+function applyPreset(key, { lesson = false } = {}) {
   $("#toast").hidden = true;
 
   if (!PRESETS[key]) {
@@ -193,6 +271,9 @@ function applyPreset(key) {
 
   stopAnimation();
   const preset = PRESETS[key];
+  // Lessons belong to the FCC tour unless they name their own structure; preset buttons keep
+  // the structure chosen in Crystal & unit cells.
+  const structureKey = preset.structure ?? (lesson ? "fcc" : state.structure);
   const kept = Object.fromEntries(
     [
       "a",
@@ -210,7 +291,13 @@ function applyPreset(key) {
       "pngScale",
     ].map((name) => [name, state[name]]),
   );
-  state = validateState({ ...DEFAULT_STATE, ...kept, ...preset.patch });
+  state = validateState({
+    ...DEFAULT_STATE,
+    ...kept,
+    ...structureDefaults(structureKey, { ...DEFAULT_STATE, ...kept, structure: state.structure }),
+    ...preset.patch,
+    ...preset.variants?.[structureKey],
+  });
   concept = preset.concept;
   selection = previousSelection = null;
   surfaceView.fit();
@@ -320,25 +407,49 @@ function indexButtons(key, values) {
 
 const note = (text) => `<p class="small-note">${text}</p>`;
 
+/** Quick picks with their own labels, e.g. HCP [h k l] values shown as (h k i l). */
+function labeledButtons(key, picks) {
+  return `<div class="presets">${picks.map(([value, label]) => `<button data-pick="${key}" data-value="${value}" class="${fmtVec(state[key]) === value ? "active" : ""}">${label}</button>`).join("")}</div>`;
+}
+
+/** Plane index field and quick picks: (h k l), or (h k l) / (h k i l) on a₁, a₂, c for HCP. */
+function planeIndexField(label, key) {
+  if (!structure().hexagonal) {
+    return textField(label, key, { hint: "integers; spaces" });
+  }
+  return (
+    textField(`${label.replace("(h k l)", "")}(h k l) or (h k i l)`, key, {
+      hint: "a₁, a₂, c axes",
+    }) + note(`(${fmtVec(state[key])}) on a₁, a₂, c is (${planeName(state[key])}).`)
+  );
+}
+
 function planeControls() {
   return (
     checkField("Plane sheet", "plane") +
-    textField("Miller indices (h k l)", "hkl", { hint: "integers; spaces" }) +
-    indexButtons("hkl", [
-      "0 0 1",
-      "0 1 0",
-      "1 0 0",
-      "1 1 0",
-      "1 0 1",
-      "0 1 1",
-      "1 1 1",
-      "1 1 2",
-      "2 1 0",
-    ]) +
+    planeIndexField("Miller indices (h k l)", "hkl") +
+    (structure().hexagonal
+      ? labeledButtons("hkl", STRUCTURES.hcp.planes)
+      : indexButtons("hkl", [
+          "0 0 1",
+          "0 1 0",
+          "1 0 0",
+          "1 1 0",
+          "1 0 1",
+          "0 1 1",
+          "1 1 1",
+          "1 1 2",
+          "2 1 0",
+        ])) +
     selectField("Plane location", "location", [
       ["canonical", "Canonical · c = 1"],
       ["origin", "Through origin · c = 0"],
-      ["center", "Through supercell center"],
+      [
+        "center",
+        structure().hexagonal && state.hexPrism
+          ? "Through prism center"
+          : "Through supercell center",
+      ],
       ["translated", "Translated · choose c"],
       ["layer", "Occupied layer · choose index"],
     ]) +
@@ -350,7 +461,10 @@ function planeControls() {
       : "") +
     selectField("Plane set", "planeSet", [
       ["one", "One plane"],
-      ["symmetry", "Cubic symmetry family {hkl}"],
+      [
+        "symmetry",
+        structure().hexagonal ? "Hexagonal symmetry family" : "Cubic symmetry family {hkl}",
+      ],
       ["parallel", "Parallel geometric c = integers"],
       ["atomic", "All occupied parallel layers"],
     ]) +
@@ -370,28 +484,38 @@ function planeControls() {
 function directionControls() {
   return (
     checkField("Direction arrow", "direction") +
-    textField("Direction [u v w]", "uvw", { hint: "integers; spaces" }) +
-    indexButtons("uvw", [
-      "1 0 0",
-      "0 1 0",
-      "0 0 1",
-      "1 1 0",
-      "1 -1 0",
-      "1 0 1",
-      "1 1 1",
-      "1 1 -2",
-    ]) +
+    (structure().hexagonal
+      ? textField("Direction [u v w] or [u v t w]", "uvw", { hint: "a₁, a₂, c axes" }) +
+        note(`[${fmtVec(state.uvw)}] on a₁, a₂, c is [${directionName(state.uvw)}].`) +
+        labeledButtons("uvw", STRUCTURES.hcp.directions)
+      : textField("Direction [u v w]", "uvw", { hint: "integers; spaces" }) +
+        indexButtons("uvw", [
+          "1 0 0",
+          "0 1 0",
+          "0 0 1",
+          "1 1 0",
+          "1 -1 0",
+          "1 0 1",
+          "1 1 1",
+          "1 1 -2",
+        ])) +
     rangeField("Vector multiplier × a", "scale", 0.05, 4, 0.05) +
-    textField("Arrow origin / a", "arrowOrigin", { hint: "X Y Z" }) +
+    textField(
+      structure().hexagonal ? "Arrow origin (unit-cell fractions)" : "Arrow origin / a",
+      "arrowOrigin",
+      { hint: structure().hexagonal ? "f₁ f₂ f₃" : "X Y Z" },
+    ) +
     checkField("Direction family ⟨uvw⟩", "dirFamily") +
     checkField("Repeat this displayed vector", "repeat") +
     note(
-      "Repeating an arbitrary scaled arrow does not guarantee FCC lattice-site endpoints. Calculate tests the actual vector.",
+      `Repeating an arbitrary scaled arrow does not guarantee ${structure().short} lattice-site endpoints. Calculate tests the actual vector.`,
     )
   );
 }
 
 function sharedControls() {
+  const S = structure();
+  const registryPlane = S.hexagonal ? "(0001)" : "(111)";
   return (
     section(
       "appearance",
@@ -399,22 +523,25 @@ function sharedControls() {
       checkField("Host atoms", "atoms") +
         selectField("Sphere radius", "radiusMode", [
           ["educational", "Educational · fraction of a"],
-          ["physical", "Touching hard spheres · a/(2√2)"],
+          [
+            "physical",
+            `Touching hard spheres · ${S.key === "fcc" ? "a/(2√2)" : S.formulas.radius}`,
+          ],
           ["manual", "Manual · fraction of a"],
         ]) +
         (state.radiusMode !== "physical"
           ? rangeField("Radius / a", "radius", 0.015, 0.49, 0.005)
-          : note(`R = ${fmt(latticeMetrics(state.a).radius)} Å · geometric hard-sphere value.`)) +
+          : note(`R = ${fmt(metricsOf(S, state.a).radius)} Å · geometric hard-sphere value.`)) +
         rangeField("Host opacity", "opacity", 0.05, 1, 0.01) +
         rangeField("Sphere resolution", "quality", 8, 48, 4) +
         selectField("Host labels", "labels", [
           ["none", "None"],
           ["id", "Site ID"],
-          ["fractional", "Conventional fractions"],
+          ["fractional", S.hexagonal ? "Unit-cell fractions" : "Conventional fractions"],
           ["cartesian", "Cartesian coordinates (Å)"],
-          ["registry", "(111) A / B / C registry"],
+          ["registry", `${registryPlane} ${S.hexagonal ? "A / B" : "A / B / C"} registry`],
         ]) +
-        checkField("Color (111) registries", "registryColor") +
+        checkField(`Color ${registryPlane} registries`, "registryColor") +
         colorField("Host atoms", "color") +
         colorField("Selected site", "selectedColor") +
         colorField("Neighbors", "neighborColor") +
@@ -464,30 +591,51 @@ function renderControls() {
   let html = "";
 
   if (state.topic === "crystal") {
+    const S = structure();
+    const prism = S.hexagonal && state.hexPrism;
     html =
-      '<div class="control-title">CONVENTIONAL FCC CELL</div>' +
-      textField("Lattice parameter a (Å)", "a", {
-        type: "number",
-        min: 0.1,
-        max: 100,
-        step: 0.01,
-      }) +
+      `<div class="control-title">${S.hexagonal ? `HCP ${prism ? "HEXAGONAL PRISM" : "HEXAGONAL UNIT CELL"}` : `CONVENTIONAL ${S.short} CELL`}</div>` +
+      selectField(
+        "Crystal structure",
+        "structure",
+        STRUCTURE_KEYS.map((key) => [key, `${STRUCTURES[key].short} · ${STRUCTURES[key].name}`]),
+      ) +
+      textField(
+        S.hexagonal ? "Lattice parameter a (Å) · c = 1.633 a" : "Lattice parameter a (Å)",
+        "a",
+        { type: "number", min: 0.1, max: 100, step: 0.01 },
+      ) +
+      (S.hexagonal ? checkField("Hexagonal prism (3 unit cells)", "hexPrism") : "") +
       `<div class="row">${state.N.map((count, axis) => `<label class="field"><span>N${"xyz"[axis]}</span><input type="number" data-axis="${axis}" value="${count}" min="1" max="10" step="1" aria-label="N${"xyz"[axis]}"></label>`).join("")}</div>` +
+      (prism
+        ? note(
+            `The prism is N${"z"} = ${state.N[2]} ${state.N[2] === 1 ? "story" : "stories"} high: 12 corners × ⅙ + 2 face centers × ½ + 3 inside = 6 atoms per story. Nx and Ny size the unit-cell supercell used without the prism and by the exports.`,
+          )
+        : "") +
       selectField("Boundary representation", "mode", [
         ["closed", "Closed drawing · all boundary sites"],
         ["ghost", "Unique atoms + periodic ghosts"],
         ["unique", "Unique computational atoms only"],
       ]) +
       note(
-        "Default: 14 visible sites, 4 periodic atoms. Unique mode deliberately omits repeated outer faces.",
+        prism
+          ? "The prism is always drawn closed: 17 visible sites per story. Unique and ghost drawings apply to the unit-cell supercell."
+          : `Default: ${S.unit.sites} visible sites, ${S.unit.atoms} periodic atom${S.unit.atoms === 1 ? "" : "s"}. Unique mode deliberately omits repeated outer faces.`,
       ) +
       checkField("Capped boundary spheres", "clip") +
-      selectField("Conventional boundaries", "bounds", [
-        ["outer", "Outer supercell box"],
-        ["all", "Every conventional cell"],
+      selectField(S.hexagonal ? "Cell boundaries" : "Conventional boundaries", "bounds", [
+        ["outer", prism ? "Prism outline" : "Outer supercell box"],
+        [
+          "all",
+          prism
+            ? "Prism and its 3 unit cells"
+            : S.hexagonal
+              ? "Every unit cell"
+              : "Every conventional cell",
+        ],
         ["none", "None"],
       ]) +
-      checkField("Cubic axes", "axes") +
+      checkField(S.hexagonal ? "Hexagonal axes a₁, a₂, c" : "Cubic axes", "axes") +
       checkField("Global origin", "origin") +
       section(
         "primitive",
@@ -498,22 +646,27 @@ function renderControls() {
           checkField("Primitive vectors", "primitiveVectors") +
           checkField("Wigner–Seitz cell", "ws") +
           note(
-            "Isolate replaces the cubic atom drawing. The Wigner–Seitz cell is centered on the selected host or the origin.",
+            `Isolate replaces the ${S.hexagonal ? "unit-cell" : "cubic"} atom drawing. The Wigner–Seitz cell is centered on the selected host or the origin.`,
           ),
         concept === "primitive",
       ) +
       section(
         "selected-cell",
-        "Highlight a conventional cell",
+        S.hexagonal ? "Highlight a unit cell" : "Highlight a conventional cell",
         checkField("Selected cell box", "cellOn") +
           textField("Cell index (i j k)", "cell", { hint: "zero based" }) +
-          note("One selected box; indices are clamped to the configured supercell."),
+          note(
+            prism
+              ? "In the prism, the highlighted unit cell is the one spanned by a₁, a₂ on story k."
+              : "One selected box; indices are clamped to the configured supercell.",
+          ),
       ) +
       section(
         "presets",
         "Learning presets",
         `<div class="preset-list">${Object.entries(PRESETS)
-          .map(([key, preset]) => `<button data-preset="${key}">${preset.title}</button>`)
+          .filter(([, preset]) => !preset.structures || preset.structures.includes(S.key))
+          .map(([key, preset]) => `<button data-preset="${key}">${presetTitle(preset, S)}</button>`)
           .join("")}</div>`,
       );
   }
@@ -526,9 +679,13 @@ function renderControls() {
       section(
         "comparisons",
         "Compare orientations",
-        textField("Second plane (h k l)", "hkl2") +
+        (structure().hexagonal
+          ? textField("Second plane (h k l) or (h k i l)", "hkl2")
+          : textField("Second plane (h k l)", "hkl2")) +
           checkField("Draw comparison plane", "plane2") +
-          textField("Second direction [u v w]", "uvw2") +
+          (structure().hexagonal
+            ? textField("Second direction [u v w] or [u v t w]", "uvw2")
+            : textField("Second direction [u v w]", "uvw2")) +
           checkField("Draw comparison direction", "dir2") +
           note(
             "Calculate reports direction–direction, plane–plane and direction–plane angles. Comparison planes use the same location rule.",
@@ -538,13 +695,14 @@ function renderControls() {
 
   if (state.topic === "surface") {
     const layers = planeLayers();
-    const hexagonal = layers.structure.hexagonal;
+    const S = layers.structure;
+    const hexagonal = S.hexagonal;
     const layer = currentLayer();
     html =
       '<div class="control-title">A SINGLE ATOMIC LAYER</div>' +
       (hexagonal
         ? textField("HCP plane (h k l) or (h k i l)", "hkl", { hint: "a₁, a₂, c axes" }) +
-          `<div class="presets">${STRUCTURES.hcp.planes.map(([value, label]) => `<button data-pick="hkl" data-value="${value}" class="${fmtVec(state.hkl) === value ? "active" : ""}">${label}</button>`).join("")}</div>` +
+          labeledButtons("hkl", STRUCTURES.hcp.planes) +
           note(`(${fmtVec(state.hkl)}) on a₁, a₂, c is (${layers.label}) with i = −(h + k).`)
         : textField("Surface normal (h k l)", "hkl") +
           indexButtons("hkl", ["0 0 1", "1 1 0", "1 1 1", "1 1 2", "2 1 0", "1 -1 0"])) +
@@ -564,30 +722,36 @@ function renderControls() {
       section(
         "animate",
         "Animate: cells, arrays and layers",
-        selectField(
-          "Crystal structure",
-          "animStructure",
-          STRUCTURE_KEYS.map((key) => [key, `${STRUCTURES[key].short} · ${STRUCTURES[key].name}`]),
-        ) +
-          `<div class="anim-launch">${ANIMATION_MODES.map(([key, title]) => `<button data-anim-mode="${key}" class="${state.workspace === "animation" && state.animMode === key ? "active" : ""}">${title}</button>`).join("")}</div>` +
+        `<div class="anim-launch">${ANIMATION_MODES.map(([key, title]) => `<button data-anim-mode="${key}" class="${state.workspace === "animation" && state.animMode === key ? "active" : ""}">${title}</button>`).join("")}</div>` +
           note(
-            `Opens the Cell ⇄ Net 3D view for this structure, plane and layer. Step with the player under the view or the ← / → keys.${state.animStructure === "fcc" ? "" : " The Surface net view and the tools below stay FCC."}`,
+            "Opens the Cell ⇄ Net 3D view for this structure, plane and layer. Step with the player under the view or the ← / → keys.",
           ),
         true,
       ) +
       checkField("2D primitive surface cell", "surfaceCell") +
       checkField("Surface vectors t₁, t₂", "surfaceVectors") +
       checkField("Primitive-cell tiling", "tiling") +
-      checkField("Integer cubic-translation mesh", "conventional") +
+      checkField(
+        hexagonal ? "Integer a₁, a₂, c translation mesh" : "Integer cubic-translation mesh",
+        "conventional",
+      ) +
       checkField("In-plane nearest-neighbor bonds", "bonds2d") +
       checkField("2D lattice-index labels", "labels2d") +
       rangeField("Surface patch repeats", "netRepeat", 1, 8) +
       checkField("Surface patch in crystal view", "surface") +
       '<button data-action="inspect-surface">Inspect patch in 3D</button>' +
       note(
-        "The dashed mesh spans integer cubic translations. It is a comparison cell, not a unique conventional surface-cell convention.",
+        `The dashed mesh spans integer ${hexagonal ? "a₁, a₂, c" : "cubic"} translations. It is a comparison cell, not a unique conventional surface-cell convention.`,
       ) +
-      '<div class="presets"><button data-preset="surface001">(001)</button><button data-preset="surface110">(110)</button><button data-preset="surface111">(111)</button></div><button data-preset="packing">Show close-packed contacts</button>';
+      `<div class="presets">${[
+        ["surface001", hexagonal ? "(0001)" : "(001)"],
+        ["surface110", hexagonal ? "(10−10)" : "(110)"],
+        ["surface111", hexagonal ? "(11−20)" : "(111)"],
+      ]
+        .map(([key, label]) => `<button data-preset="${key}">${label}</button>`)
+        .join(
+          "",
+        )}</div><button data-preset="packing">Show ${["fcc", "hcp"].includes(S.key) ? "close-packed" : "touching"} contacts</button>`;
   }
 
   if (state.topic === "stacking") {
@@ -618,36 +782,42 @@ function renderControls() {
       `<button data-action="stack-animation">${animationTimer ? "Stop animation" : "Animate layer addition"}</button>` +
       note(
         "Stack coordinates use an orthonormal [111] frame. FCC, HCP and fault comparisons share the same in-plane lattice; they do not all represent FCC bulk.",
-      );
+      ) +
+      (["sc", "bcc"].includes(state.structure)
+        ? note(
+            `${structure().short} has no close-packed layers: this workspace compares FCC and HCP stacking. The layer stacking of any ${structure().short} plane is in the Cell ⇄ Net workspace.`,
+          )
+        : "");
   }
 
   if (state.topic === "environment") {
+    const S = structure();
+    const words = { 2: "two", 6: "six", 8: "eight", 12: "twelve", 24: "twenty-four" };
     html =
       '<div class="control-title">BULK LOCAL ENVIRONMENT</div>' +
       checkField("Neighbors of selected host", "neighbors") +
       selectField("Include shells through", "shell", [
-        [1, "1 · twelve neighbors"],
-        [2, "2 · plus six"],
-        [3, "3 · plus twenty-four"],
+        [1, `1 · ${words[S.shells[0]]} neighbors`],
+        [2, `2 · plus ${words[S.shells[1]]}`],
+        [3, `3 · plus ${words[S.shells[2]]}`],
       ]) +
-      rangeField("Cutoff radius / a", "cutoff", 0.05, 1.5, 0.01) +
+      rangeField("Cutoff radius / a", "cutoff", 0.05, 2, 0.01) +
       checkField("Neighbor bonds", "bonds") +
       checkField("First-shell coordination hull", "hull") +
       note(
-        "Click a host to move the center. Infinite FCC translations supply neighbors beyond the displayed box.",
+        `Click a host to move the center. Infinite ${S.short} translations supply neighbors beyond the displayed box.`,
       ) +
       section(
         "holes",
         "Interstitial sites",
         selectField("Empty sites", "holes", [
           ["none", "None"],
-          ["octa", "Octahedral"],
-          ["tetra", "Tetrahedral"],
-          ["both", "Both types"],
+          ...S.holes.map((hole) => [hole.type, hole.name]),
+          ...(S.holes.length > 1 ? [["both", "Both types"]] : [["both", "All types"]]),
         ]) +
           checkField("Hosts around selected hole", "hosts") +
           note(
-            "Click a hole to inspect its 6 or 4 nearest hosts. Lower host opacity makes interior markers easier to select.",
+            `Click a hole to inspect its ${S.holes.map((hole) => hole.coordination).join(" or ")} nearest hosts. Lower host opacity makes interior markers easier to select.`,
           ),
         true,
       ) +
@@ -655,29 +825,57 @@ function renderControls() {
   }
 
   if (state.topic === "slip") {
+    const S = structure();
+    const systems = slipSystemsOf(S, state.load);
+    const words = { 6: "six", 12: "twelve" };
     html =
-      '<div class="control-title">{111}⟨110⟩ SLIP</div>' +
+      `<div class="control-title">${S.hexagonal ? "⟨a⟩ SLIP · BASAL, PRISMATIC, PYRAMIDAL" : `${S.slip.name} SLIP`}</div>` +
       checkField("Slip plane & Burgers vector", "slip") +
       selectField(
         "Slip system",
         "slipIndex",
-        slipSystems(state.load).map((system, index) => [index, `${index + 1}. ${system.label}`]),
+        systems.map((system, index) => [index, `${index + 1}. ${system.label}`]),
       ) +
-      checkField("All twelve slip systems", "allSlip") +
-      textField("Loading direction [u v w]", "load") +
-      `<div class="presets">${["0 0 1", "1 1 1", "1 2 3"].map((value) => `<button data-pick="load" data-value="${value}">[${value}]</button>`).join("")}</div>` +
-      checkField("Shockley partial-vector triangle", "partials") +
-      note(
-        "The partial-vector triangle is a separate fixed (111) example. It does not silently change to match the selected slip system.",
-      ) +
+      checkField(`All ${words[systems.length] ?? systems.length} slip systems`, "allSlip") +
+      (S.hexagonal
+        ? textField("Loading direction [u v w] or [u v t w]", "load") +
+          labeledButtons("load", [
+            ["0 0 1", "[0001]"],
+            ["1 0 0", "[2−1−10]"],
+            ["2 1 0", "[10−10]"],
+          ])
+        : textField("Loading direction [u v w]", "load") +
+          `<div class="presets">${["0 0 1", "1 1 1", "1 2 3"].map((value) => `<button data-pick="load" data-value="${value}">[${value}]</button>`).join("")}</div>`) +
+      (partialsOf(S)
+        ? checkField(
+            S.hexagonal ? "Basal partial-vector triangle" : "Shockley partial-vector triangle",
+            "partials",
+          ) +
+          note(
+            `The partial-vector triangle is a separate fixed ${S.hexagonal ? "(0001)" : "(111)"} example. It does not silently change to match the selected slip system.`,
+          )
+        : note(
+            `Partial-vector triangles are shown for the close-packed planes of FCC and HCP; ${S.short} has none.`,
+          )) +
       '<button data-concept="partials">Explain partials</button>';
   }
 
   if (state.topic === "reciprocal") {
+    const S = structure();
     html =
-      '<div class="control-title">RECIPROCAL BCC LATTICE</div>' +
-      textField("Selected G indices (h k l)", "reflection") +
-      indexButtons("reflection", ["1 1 1", "2 0 0", "2 2 0", "1 0 0", "1 1 0", "2 2 2"]) +
+      `<div class="control-title">RECIPROCAL ${S.reciprocalName.toUpperCase()} LATTICE</div>` +
+      (S.hexagonal
+        ? textField("Selected G indices (h k l) or (h k i l)", "reflection") +
+          labeledButtons("reflection", [
+            ["0 0 2", "(0002)"],
+            ["1 0 0", "(10−10)"],
+            ["1 0 1", "(10−11)"],
+            ["0 0 1", "(0001)"],
+            ["1 1 0", "(11−20)"],
+            ["1 0 2", "(10−12)"],
+          ])
+        : textField("Selected G indices (h k l)", "reflection") +
+          indexButtons("reflection", ["1 1 1", "2 0 0", "2 2 0", "1 0 0", "1 1 0", "2 2 2"])) +
       textField("Wavelength λ (Å)", "lambda", { type: "number", min: 0.001, max: 20, step: 0.01 }) +
       rangeField("Reciprocal grid extent", "extent", 1, 4) +
       checkField("Allowed reciprocal nodes", "atoms") +
@@ -686,11 +884,23 @@ function renderControls() {
       checkField("Primitive reciprocal vectors", "basisReciprocal") +
       checkField("Reciprocal axes", "axes") +
       selectField("Reciprocal conventional box", "bounds", [
-        ["outer", "Show edge 4π/a"],
+        [
+          "outer",
+          S.hexagonal
+            ? "Show reciprocal unit cell"
+            : `Show edge ${S.reciprocalBox === 1 ? "2π/a" : "4π/a"}`,
+        ],
         ["none", "None"],
       ]) +
       note(
-        "The displayed coordinate unit is 2π/a Å⁻¹. Mixed-parity points are not nodes of the reciprocal lattice. Calculate shows allowed Bragg positions, without intensities.",
+        `The displayed coordinate unit is 2π/a Å⁻¹. ${
+          {
+            sc: "Every integer (hkl) is a node of the reciprocal simple cubic lattice.",
+            bcc: "Points with h + k + l odd are not nodes of the reciprocal lattice.",
+            fcc: "Mixed-parity points are not nodes of the reciprocal lattice.",
+            hcp: "Points with h + 2k a multiple of 3 and l odd are not nodes with intensity.",
+          }[S.key]
+        } Calculate shows allowed Bragg positions, without intensities.`,
       );
   }
 
@@ -709,19 +919,22 @@ const valueList = (rows) =>
 
 function currentValues() {
   const s = state;
-  const metrics = latticeMetrics(s.a);
-  const plane = planeInfo(s.hkl, s.a);
-  const surface = surfaceCell(s.hkl, s.a);
-  const direction = directionInfo(s.uvw, s.a);
-  const reflection = reflectionInfo(s.reflection, s.a, s.lambda);
+  const S = structure();
+  const fcc = S.key === "fcc";
+  const metrics = metricsOf(S, s.a);
+  const plane = planeOf(S, s.hkl, s.a);
+  const surface = surfaceOf(S, s.hkl, s.a);
+  const direction = directionOf(S, s.uvw, s.a);
+  const reflection = reflectionOf(S, s.reflection, s.a, s.lambda);
 
   if (concept === "stacking") {
+    // The stacking comparison is built from close-packed layers in units of the FCC a.
     const stack = buildStack(s.stack, s.layers, s.stackRepeat, s.separation, s.registries);
     return valueList([
       ["Construction", STACKINGS[s.stack].name],
       ["Ideal layer gap", `${fmt(stack.height * s.a)} Å`],
       ["Displayed gap", `${fmt(stack.displayHeight * s.a)} Å`],
-      ["In-plane distance", `${fmt(metrics.nn)} Å`],
+      ["In-plane distance", `${fmt(s.a / Math.SQRT2)} Å`],
       ["Registry sequence", stack.sequence],
       [
         "Ideal repeat",
@@ -751,14 +964,19 @@ function currentValues() {
 
   if (["planes", "spacing"].includes(concept)) {
     return valueList([
-      ["Plane", `(${fmtVec(s.hkl)})`],
+      ["Plane", `(${planeName(s.hkl)})`],
       ["Geometric d", `${fmt(plane.d)} Å`],
-      ["Adjacent occupied layers", `${fmt(plane.gap)} Å`],
+      [
+        "Adjacent occupied layers",
+        plane.evenlySpaced
+          ? `${fmt(plane.gap)} Å`
+          : `${plane.gaps.map((gap) => fmt(gap)).join(" / ")} Å, alternating`,
+      ],
       ["Pure normal repeat", `${fmt(plane.period)} Å`],
     ]);
   } else if (["surface", "packing"].includes(concept)) {
     return valueList([
-      ["Surface", `(${fmtVec(s.hkl)})`],
+      ["Surface", `(${planeName(s.hkl)})`],
       ["Primitive-vector lengths", `${surface.lengths.map((length) => fmt(length)).join(" / ")} Å`],
       ["Included angle", `${fmt(surface.angle, 2)}°`],
       ["Area", `${fmt(surface.area)} Å²`],
@@ -766,18 +984,28 @@ function currentValues() {
       ["Hard-sphere APF", fmt(metrics.apf, 6)],
     ]);
   } else if (["directions", "slip", "partials"].includes(concept)) {
-    return valueList([
-      ["Selected arrow length", `${fmt(direction.length * s.scale)} Å`],
-      ["a/2[uvw] translation?", direction.halfValid ? "Yes" : "No"],
-      ["Perfect |b|", `${fmt(metrics.nn)} Å`],
-      ["Shockley |bₚ|", `${fmt(s.a / Math.sqrt(6))} Å`],
-    ]);
+    const partials = partialsOf(S);
+    return valueList(
+      fcc
+        ? [
+            ["Selected arrow length", `${fmt(direction.length * s.scale)} Å`],
+            ["a/2[uvw] translation?", direction.halfValid ? "Yes" : "No"],
+            ["Perfect |b|", `${fmt(metrics.nn)} Å`],
+            ["Shockley |bₚ|", `${fmt(s.a / Math.sqrt(6))} Å`],
+          ]
+        : [
+            ["Selected arrow length", `${fmt(direction.length * s.scale)} Å`],
+            [`Shortest translation along [${directionName(s.uvw)}]`, `${fmt(direction.period)} Å`],
+            [`Perfect |b| = ${S.slip.burgers}`, `${fmt(metrics.nn)} Å`],
+            ...(partials ? [["Partial |bₚ|", `${fmt(partials.partialLength * s.a)} Å`]] : []),
+          ],
+    );
   } else {
     return valueList(
       concept === "reciprocal"
         ? [
-            ["Selected reflection", `(${fmtVec(s.reflection)})`],
-            ["F/f", reflection.factor],
+            ["Selected reflection", `(${planeName(s.reflection)})`],
+            [fcc ? "F/f" : "|F/f|", fcc ? reflection.factor : fmt(reflection.factor)],
             ["Allowed?", reflection.allowed ? "Yes" : "No"],
             ["d", `${fmt(reflection.d)} Å`],
             ["|G|", `${fmt(reflection.magnitude)} Å⁻¹`],
@@ -788,10 +1016,18 @@ function currentValues() {
           ]
         : [
             ["Lattice constant", `${fmt(s.a)} Å`],
+            ...(S.hexagonal ? [["Axis c = 1.633 a", `${fmt(S.axes[2][2] * s.a)} Å`]] : []),
             ["Nearest-neighbor distance", `${fmt(metrics.nn)} Å`],
             ["Touching-sphere radius", `${fmt(metrics.radius)} Å`],
             ["3D primitive volume", `${fmt(metrics.primitiveVolume)} Å³`],
-            ["Periodic atoms", formatCount(4 * s.N.reduce((product, count) => product * count))],
+            [
+              "Periodic atoms",
+              formatCount(
+                S.hexagonal && s.hexPrism
+                  ? 6 * s.N[2]
+                  : S.unit.atoms * s.N.reduce((product, count) => product * count),
+              ),
+            ],
           ],
     );
   }
@@ -799,13 +1035,13 @@ function currentValues() {
 
 /** Learn tab: the current concept, with live values for the current settings. */
 function renderLearn() {
-  const info = CONCEPTS[concept];
+  const info = conceptFor(concept, state.structure);
   return `<article class="learn"><div class="eyebrow">THE IDEA</div><h2>${info.title}</h2><p>${info.intro}</p><div class="equation">${escapeHtml(info.equation)}</div><h3>Read the drawing</h3><p>${info.view}</p><div class="warning"><strong>COMMON CONFUSION</strong><p>${info.confusion}</p></div><h3>With your current values</h3>${currentValues()}<div class="try"><strong>TRY THIS</strong><p>${info.try}</p></div><h3>Connect the ideas</h3><div class="related">${info.related
     .map(
       (key) =>
         `<button data-concept="${key}">${
           {
-            crystal: "FCC cell",
+            crystal: `${structure().short} cell`,
             primitive: "3D primitive cell",
             coordinates: "Coordinates",
             directions: "Directions",
@@ -831,17 +1067,21 @@ function renderLearn() {
 /** Calculate tab: every derived quantity for the current settings. */
 function renderCalculate() {
   const s = state;
-  const metrics = latticeMetrics(s.a);
-  const plane = planeInfo(s.hkl, s.a);
-  const surface = surfaceCell(s.hkl, s.a);
-  const direction = directionInfo(s.uvw, s.a);
-  const level = planeLevel(s.hkl, s.N, s.location, s.c, s.layer);
+  const S = structure();
+  const fcc = S.key === "fcc";
+  const metrics = metricsOf(S, s.a);
+  const plane = planeOf(S, s.hkl, s.a);
+  const surface = surfaceOf(S, s.hkl, s.a);
+  const direction = directionOf(S, s.uvw, s.a);
+  const region = regionOf(S, s);
+  const level = planeLevelOf(S, s.hkl, region.levelCells, s.location, s.c, s.layer);
   const stack = buildStack(s.stack, s.layers, s.stackRepeat, s.separation, s.registries);
-  const systems = slipSystems(s.load);
-  const reflection = reflectionInfo(s.reflection, s.a, s.lambda);
-  const atomCount = 4 * s.N.reduce((product, count) => product * count);
-  const bragg = braggTable(s.a, s.lambda);
-  const neighbors = neighborShells(
+  const systems = slipSystemsOf(S, s.load);
+  const reflection = reflectionOf(S, s.reflection, s.a, s.lambda);
+  const atomCount = S.unit.atoms * s.N.reduce((product, count) => product * count);
+  const bragg = braggTableOf(S, s.a, s.lambda);
+  const neighbors = neighborsOf(
+    S,
     selection?.space === "crystal" && !selection.type ? selection.p : [0, 0, 0],
     s.shell,
     s.cutoff,
@@ -863,14 +1103,29 @@ function renderCalculate() {
   }
 
   if (s.topic === "reciprocal" || s.workspace === "reciprocal") {
+    const rule = {
+      sc: ["F/f = 1", "Every (hkl) · allowed", "—"],
+      bcc: [
+        `F/f = 1 + (−1)^(h+k+l) = ${fmt(reflection.factor)}`,
+        "h + k + l even · allowed",
+        "h + k + l odd · absent",
+      ],
+      fcc: [
+        `F/f = 1 + (−1)^(k+l) + (−1)^(h+l) + (−1)^(h+k) = ${reflection.factor}`,
+        "All same parity · allowed",
+        "Mixed parity · absent",
+      ],
+      hcp: [
+        `|F/f| = |1 + e^(2πi(h/3 + 2k/3 + l/2))| = ${fmt(reflection.factor)}`,
+        "Phases do not cancel · allowed",
+        "h + 2k = 3n and l odd · absent",
+      ],
+    }[S.key];
     html +=
-      `<h3>Selected diffraction geometry</h3><div class="equation">F/f = 1 + (−1)^(k+l) + (−1)^(h+l) + (−1)^(h+k) = ${reflection.factor}</div>` +
+      `<h3>Selected diffraction geometry</h3><div class="equation">${rule[0]}</div>` +
       valueList([
-        ["Reflection", `(${fmtVec(s.reflection)})`],
-        [
-          "Selection rule",
-          reflection.allowed ? "All same parity · allowed" : "Mixed parity · absent",
-        ],
+        ["Reflection", `(${planeName(s.reflection)})`],
+        ["Selection rule", reflection.allowed ? rule[1] : rule[2]],
         ["d", `${fmt(reflection.d)} Å`],
         ["G", `${fmtVec(reflection.G)} Å⁻¹`],
         ["|G| = 2π/d", `${fmt(reflection.magnitude)} Å⁻¹`],
@@ -883,48 +1138,119 @@ function renderCalculate() {
       note(
         "A geometric angle for a forbidden index is not a predicted peak. Equal monatomic scatterers are assumed.",
       ) +
-      `<h3>Allowed reflections (h ≤ 5)</h3><table><thead><tr><th>(hkl)</th><th>d (Å)</th><th>2θ</th></tr></thead><tbody>${bragg.map((row) => `<tr><td>(${fmtVec(row.n)})</td><td>${fmt(row.d)}</td><td>${fmt(row.twoTheta, 3)}°</td></tr>`).join("") || '<tr><td colspan="3">No accessible listed reflections at this λ.</td></tr>'}</tbody></table>`;
+      `<h3>Allowed reflections (h ≤ 5)</h3><table><thead><tr><th>(hkl)</th><th>d (Å)</th><th>2θ</th></tr></thead><tbody>${bragg.map((row) => `<tr><td>(${planeName(row.n)})</td><td>${fmt(row.d)}</td><td>${fmt(row.twoTheta, 3)}°</td></tr>`).join("") || '<tr><td colspan="3">No accessible listed reflections at this λ.</td></tr>'}</tbody></table>`;
   }
 
   if (s.topic === "slip") {
+    const partials = partialsOf(S);
     html +=
-      `<h3>Schmid factors · load [${fmtVec(s.load)}]</h3><div class="equation">m = |l̂·n̂| |l̂·b̂| ≤ 0.5</div><table><thead><tr><th>Slip system</th><th>m</th></tr></thead><tbody>${systems.map((system, index) => `<tr data-slip="${index}" class="${index === s.slipIndex ? "current" : ""}"><td>${system.label}</td><td>${fmt(system.schmid, 4)}</td></tr>`).join("")}</tbody></table>` +
-      valueList([
-        ["Perfect |b|", `${fmt(metrics.nn)} Å`],
-        ["Shockley |bₚ|", `${fmt(s.a / Math.sqrt(6))} Å`],
-        ["Partial sum / a", fmtVec(add(SHOCKLEY_EXAMPLE.first, SHOCKLEY_EXAMPLE.second))],
-        ["Both partials · [111]", "0; 0"],
-      ]) +
+      `<h3>Schmid factors · load [${directionName(s.load)}]</h3><div class="equation">m = |l̂·n̂| |l̂·b̂| ≤ 0.5</div><table><thead><tr><th>Slip system</th><th>m</th></tr></thead><tbody>${systems.map((system, index) => `<tr data-slip="${index}" class="${index === s.slipIndex ? "current" : ""}"><td>${system.label}</td><td>${fmt(system.schmid, 4)}</td></tr>`).join("")}</tbody></table>` +
+      valueList(
+        fcc
+          ? [
+              ["Perfect |b|", `${fmt(metrics.nn)} Å`],
+              ["Shockley |bₚ|", `${fmt(s.a / Math.sqrt(6))} Å`],
+              ["Partial sum / a", fmtVec(add(partials.first, partials.second))],
+              ["Both partials · [111]", "0; 0"],
+            ]
+          : [
+              [`Perfect |b| = |${S.slip.burgers}|`, `${fmt(metrics.nn)} Å`],
+              ...(partials
+                ? [
+                    ["Partial |bₚ|", `${fmt(partials.partialLength * s.a)} Å`],
+                    ["Partial sum / a", fmtVec(add(partials.first, partials.second))],
+                    ["Both partials · [0001]", "0; 0"],
+                  ]
+                : []),
+            ],
+      ) +
       note(
         "Click a row to view that slip system. This is resolved shear geometry, without a constitutive stress model.",
       );
   }
 
-  html += `<h3>Bulk FCC geometry</h3>${valueList([
-    ["a", `${fmt(s.a)} Å`],
-    ["Unique supercell atoms", formatCount(atomCount)],
-    ["Closed drawing sites", formatCount(latticeSites(s.N).length)],
-    ["Nearest neighbors", "12 in ideal bulk"],
-    ["dNN = a/√2", `${fmt(metrics.nn)} Å`],
-    ["R = a√2/4", `${fmt(metrics.radius)} Å`],
-    ["APF = π/(3√2)", fmt(metrics.apf, 6)],
-    ["Conventional volume", `${fmt(metrics.volume)} Å³`],
-    ["3D primitive volume", `${fmt(metrics.primitiveVolume)} Å³`],
-    ["Primitive angles", "60°, 60°, 60°"],
-  ])}`;
+  html += `<h3>Bulk ${S.short} geometry</h3>${valueList(
+    fcc
+      ? [
+          ["a", `${fmt(s.a)} Å`],
+          ["Unique supercell atoms", formatCount(atomCount)],
+          ["Closed drawing sites", formatCount(sitesOf(S, s.N).length)],
+          ["Nearest neighbors", "12 in ideal bulk"],
+          ["dNN = a/√2", `${fmt(metrics.nn)} Å`],
+          ["R = a√2/4", `${fmt(metrics.radius)} Å`],
+          ["APF = π/(3√2)", fmt(metrics.apf, 6)],
+          ["Conventional volume", `${fmt(metrics.volume)} Å³`],
+          ["3D primitive volume", `${fmt(metrics.primitiveVolume)} Å³`],
+          ["Primitive angles", "60°, 60°, 60°"],
+        ]
+      : [
+          ["a", `${fmt(s.a)} Å`],
+          ...(S.hexagonal ? [["c = √(8/3) a", `${fmt(S.axes[2][2] * s.a)} Å`]] : []),
+          [`Atoms per ${S.hexagonal ? "unit" : "conventional"} cell`, S.unit.count],
+          ...(S.hexagonal
+            ? [
+                ["Atoms per hexagonal prism", "12 × ⅙ + 2 × ½ + 3 = 6"],
+                ["Prism drawing sites", formatCount(prismSites(S, s.N[2]).length)],
+              ]
+            : []),
+          [
+            S.hexagonal ? "Unique unit-cell supercell atoms" : "Unique supercell atoms",
+            formatCount(atomCount),
+          ],
+          [
+            S.hexagonal ? "Closed unit-cell drawing sites" : "Closed drawing sites",
+            formatCount(sitesOf(S, s.N).length),
+          ],
+          ["Nearest neighbors", `${S.coordination} in ideal bulk`],
+          [`dNN = ${S.formulas.nearest}`, `${fmt(metrics.nn)} Å`],
+          [`R = ${S.formulas.radius}`, `${fmt(metrics.radius)} Å`],
+          [`APF = ${S.formulas.apf}`, fmt(metrics.apf, 6)],
+          [S.hexagonal ? "Unit-cell volume" : "Conventional volume", `${fmt(metrics.volume)} Å³`],
+          ["3D primitive volume", `${fmt(metrics.primitiveVolume)} Å³`],
+          [
+            "Primitive angles",
+            S.hexagonal
+              ? "90°, 90°, 120°"
+              : `${fmt(S.primitiveAngle, 2)}°, ${fmt(S.primitiveAngle, 2)}°, ${fmt(S.primitiveAngle, 2)}°`,
+          ],
+        ],
+  )}`;
+  const axisNames = S.hexagonal ? ["f₁", "f₂", "f₃"] : ["X", "Y", "Z"];
+  const axisLengths = S.hexagonal ? [1, 1, S.axes[2][2]] : [1, 1, 1];
   html +=
-    `<h3>Plane (${fmtVec(s.hkl)})</h3><div class="equation">${s.hkl.map((value, axis) => `${value}${"XYZ"[axis]}`).join(" + ")} = ${fmt(level)}<br>X=x/a, Y=y/a, Z=z/a</div>` +
+    `<h3>Plane (${planeName(s.hkl)})</h3><div class="equation">${s.hkl.map((value, axis) => `${value}${axisNames[axis]}`).join(" + ")} = ${fmt(level)}<br>${S.hexagonal ? "r = f₁a₁ + f₂a₂ + f₃c" : "X=x/a, Y=y/a, Z=z/a"}</div>` +
     valueList([
       ["Location rule", escapeHtml(s.location)],
       [
-        "Intercepts (Å)",
-        s.hkl.map((component) => (component ? fmt((s.a * level) / component) : "∞")).join(" / "),
+        S.hexagonal ? "Intercepts on a₁ / a₂ / c (Å)" : "Intercepts (Å)",
+        s.hkl
+          .map((component, axis) =>
+            component ? fmt((s.a * axisLengths[axis] * level) / component) : "∞",
+          )
+          .join(" / "),
       ],
       ["Unit normal", fmtVec(plane.normal)],
-      ["Geometric d = a/|hkl|", `${fmt(plane.d)} Å`],
-      ["g = gcd(k+l, h+l, h+k)", plane.g],
-      ["Occupied c levels", `j × ${fmt(plane.step)}; j ∈ ℤ`],
-      ["Adjacent layer gap", `${fmt(plane.gap)} Å`],
+      [S.hexagonal ? "Geometric d = 1/|G|" : "Geometric d = a/|hkl|", `${fmt(plane.d)} Å`],
+      ...(fcc
+        ? [
+            ["g = gcd(k+l, h+l, h+k)", plane.g],
+            ["Occupied c levels", `j × ${fmt(plane.step)}; j ∈ ℤ`],
+            ["Adjacent layer gap", `${fmt(plane.gap)} Å`],
+          ]
+        : [
+            [
+              "Occupied c levels",
+              plane.layersPerStep === 1
+                ? `j × ${fmt(plane.step)}; j ∈ ℤ`
+                : `${plane.offsets.map((offset) => fmt(offset)).join(", ")} + j × ${fmt(plane.step)}; j ∈ ℤ`,
+            ],
+            [
+              "Adjacent layer gap",
+              plane.evenlySpaced
+                ? `${fmt(plane.gap)} Å`
+                : `${plane.gaps.map((gap) => fmt(gap)).join(" / ")} Å, alternating`,
+            ],
+          ]),
       ["Pure normal repeat", `${fmt(plane.period)} Å`],
     ]) +
     note(
@@ -938,9 +1264,12 @@ function renderCalculate() {
       ["Lengths", `${surface.lengths.map((length) => fmt(length)).join(" / ")} Å`],
       ["Included angle", `${fmt(surface.angle, 3)}°`],
       ["|t₁ × t₂|", `${fmt(surface.area)} Å²`],
-      ["Density = 1 / area", `${fmt(surface.density, 6)} Å⁻²`],
-      ["Area × layer gap", `${fmt(surface.identity)} Å³`],
-      ["a³ / 4", `${fmt(metrics.primitiveVolume)} Å³`],
+      [`Density = ${fcc ? 1 : surface.atomsPerCell} / area`, `${fmt(surface.density, 6)} Å⁻²`],
+      [fcc ? "Area × layer gap" : "Area × lattice-layer step", `${fmt(surface.identity)} Å³`],
+      [
+        fcc ? "a³ / 4" : `Primitive volume ${S.primitiveVolumeText}`,
+        `${fmt(metrics.primitiveVolume)} Å³`,
+      ],
       ["Shortest in-plane shell", `${surface.coordination} neighbors`],
     ]) +
     note(
@@ -949,24 +1278,20 @@ function renderCalculate() {
 
   if (s.topic === "surface" || s.workspace === "animation") {
     const layers = planeLayers(s);
-    const structure = layers.structure;
     const uniform = layers.layersPerStep === 1;
     const layer = currentLayer();
     const cell = cellAround(layers, layer);
     const cut = classifyCut(layers, cell.slices.find((slice) => slice.layer === layer).polygon);
-    const cellName = structure.hexagonal ? "Prism" : "Cube";
+    const cellName = S.hexagonal ? "Prism" : "Cube";
     const shiftLengths = [...new Set(layers.shifts.map((shift) => fmt(norm(shift) * s.a)))];
     html +=
-      `<h3>Layers of ${structure.short} (${layers.label})</h3><div class="equation">${
-        structure.hexagonal
+      `<h3>Layers of ${S.short} (${layers.label})</h3><div class="equation">${
+        S.hexagonal
           ? `s = ${layers.hkl.map((value, axis) => `${value}f${"₁₂₃"[axis]}`).join(" + ")}  (fractions of a₁, a₂, c)`
           : `s = ${layers.hkl.map((value, axis) => `${value}${"XYZ"[axis]}`).join(" + ")}`
-      }<br>${uniform ? `layer j: s = j × ${fmt(layers.step)}` : `layers at s = ${layers.offsets.map((offset) => fmt(offset)).join(", ")} (+ multiples of ${fmt(layers.step)})`}<br>${structure.hexagonal ? "d = Δs/|G|, G = h b₁ + k b₂ + l b₃" : "d = Δs·a/|hkl|"}</div>` +
+      }<br>${uniform ? `layer j: s = j × ${fmt(layers.step)}` : `layers at s = ${layers.offsets.map((offset) => fmt(offset)).join(", ")} (+ multiples of ${fmt(layers.step)})`}<br>${S.hexagonal ? "d = Δs/|G|, G = h b₁ + k b₂ + l b₃" : "d = Δs·a/|hkl|"}</div>` +
       valueList([
-        [
-          "Reduced indices",
-          `(${fmtVec(layers.hkl)})${structure.hexagonal ? ` = (${layers.label})` : ""}`,
-        ],
+        ["Reduced indices", `(${fmtVec(layers.hkl)})${S.hexagonal ? ` = (${layers.label})` : ""}`],
         ["Layer step Δs", fmt(layers.step)],
         ["Layer spacing d", spacingText(layers, s.a)],
         ["Net", netText(layers)],
@@ -1000,49 +1325,83 @@ function renderCalculate() {
       ]);
   }
 
+  const shownVector = scale(directionVector(S, s.uvw), s.scale);
   html +=
-    `<h3>Direction [${fmtVec(s.uvw)}]</h3>` +
+    `<h3>Direction [${directionName(s.uvw)}]</h3>` +
     valueList([
       ["a[uvw] length", `${fmt(direction.length)} Å`],
       ["Shown multiplier", `${fmt(s.scale)} a`],
       ["Shown vector length", `${fmt(direction.length * s.scale)} Å`],
       [
-        "Shown vector is FCC translation?",
-        isLatticeTranslation(scale(s.uvw, s.scale)) ? "Yes" : "No",
+        `Shown vector is ${S.short} translation?`,
+        (fcc ? isTranslation(S, scale(s.uvw, s.scale)) : isTranslation(S, shownVector))
+          ? "Yes"
+          : "No",
       ],
       ["Unit vector", fmtVec(direction.unit)],
       ["Angles to x / y / z", direction.angles.map((angle) => `${fmt(angle, 2)}°`).join(" / ")],
-      [
-        "a/2[uvw] valid?",
-        `${direction.halfValid ? "Yes" : "No"} · u+v+w=${s.uvw.reduce((sum, value) => sum + value)}`,
-      ],
-      ["Shortest FCC translation / a", fmtVec(direction.translation)],
+      ...(fcc
+        ? [
+            [
+              "a/2[uvw] valid?",
+              `${direction.halfValid ? "Yes" : "No"} · u+v+w=${s.uvw.reduce((sum, value) => sum + value)}`,
+            ],
+            ["Shortest FCC translation / a", fmtVec(direction.translation)],
+          ]
+        : [[`Shortest ${S.short} translation (indices)`, fmtVec(direction.translation)]]),
       ["Shortest repeat", `${fmt(direction.period)} Å`],
       ["Occupied-row linear density", `${fmt(direction.density, 5)} Å⁻¹`],
     ]) +
     `<h3>Zone law & angles</h3><div class="equation">h·u + k·v + l·w = ${s.hkl.map((value, axis) => `(${value})(${s.uvw[axis]})`).join(" + ")} = ${dot(s.hkl, s.uvw)}<br>${dot(s.hkl, s.uvw) === 0 ? "Direction lies parallel to the plane." : "Direction is not parallel to the plane."}</div>` +
-    valueList([
-      ["Two directions (directed)", `${fmt(angleBetween(s.uvw, s.uvw2), 3)}°`],
-      ["Two planes (acute)", `${fmt(angleBetween(s.hkl, s.hkl2, true), 3)}°`],
-      ["Direction to plane (acute)", `${fmt(90 - angleBetween(s.hkl, s.uvw, true), 3)}°`],
-    ]);
+    valueList(
+      fcc
+        ? [
+            ["Two directions (directed)", `${fmt(angleBetween(s.uvw, s.uvw2), 3)}°`],
+            ["Two planes (acute)", `${fmt(angleBetween(s.hkl, s.hkl2, true), 3)}°`],
+            ["Direction to plane (acute)", `${fmt(90 - angleBetween(s.hkl, s.uvw, true), 3)}°`],
+          ]
+        : [
+            [
+              "Two directions (directed)",
+              `${fmt(angleBetween(directionVector(S, s.uvw), directionVector(S, s.uvw2)), 3)}°`,
+            ],
+            [
+              "Two planes (acute)",
+              `${fmt(angleBetween(planeNormal(S, s.hkl), planeNormal(S, s.hkl2), true), 3)}°`,
+            ],
+            [
+              "Direction to plane (acute)",
+              `${fmt(90 - angleBetween(planeNormal(S, s.hkl), directionVector(S, s.uvw), true), 3)}°`,
+            ],
+          ],
+    );
 
   if (s.topic === "environment") {
     html += `<h3>Current neighbor inclusion</h3>${valueList([
       ["Included through shell", s.shell],
       ["Cutoff", `${fmt(s.cutoff * s.a)} Å`],
       ["Neighbors included", neighbors.length],
-      ["Octahedral sites per PBC cell", "4 · host coordination 6"],
-      ["Tetrahedral sites per PBC cell", "8 · host coordination 4"],
-      ["Octahedral r/R", fmt(Math.SQRT2 - 1)],
-      ["Tetrahedral r/R", fmt(Math.sqrt(1.5) - 1)],
+      ...(fcc
+        ? [
+            ["Octahedral sites per PBC cell", "4 · host coordination 6"],
+            ["Tetrahedral sites per PBC cell", "8 · host coordination 4"],
+            ["Octahedral r/R", fmt(Math.SQRT2 - 1)],
+            ["Tetrahedral r/R", fmt(Math.sqrt(1.5) - 1)],
+          ]
+        : S.holes.flatMap((hole) => [
+            [
+              `${hole.name} sites per PBC cell`,
+              `${hole.sites.length} · host coordination ${hole.coordination}`,
+            ],
+            [`${hole.name} r/R = ${hole.ratioText}`, fmt(hole.ratio)],
+          ])),
     ])}<table><thead><tr><th>Vector / a</th><th>Shell</th><th>Distance Å</th></tr></thead><tbody>${neighbors.map((neighbor) => `<tr><td>${fmtVec(neighbor.v)}</td><td>${neighbor.shell}</td><td>${fmt(neighbor.distance * s.a)}</td></tr>`).join("")}</tbody></table>`;
   }
 
   if (s.topic === "surface") {
     const surfaceStart = html.indexOf("<h3>Exact 2D primitive surface cell</h3>");
     const surfaceEnd = html.indexOf("<h3>Direction [", surfaceStart);
-    const bulkStart = html.indexOf("<h3>Bulk FCC geometry</h3>");
+    const bulkStart = html.indexOf(`<h3>Bulk ${S.short} geometry</h3>`);
 
     if (surfaceStart >= 0 && surfaceEnd > surfaceStart && bulkStart >= 0) {
       const surfaceBlock = html.slice(surfaceStart, surfaceEnd);
@@ -1056,12 +1415,13 @@ function renderCalculate() {
 
 /** Verify tab: live invariant checks. */
 function renderVerify() {
-  const checks = runChecks(state.a, state.hkl, state.load);
-  return `<div class="eyebrow">CHECK THE CONSTRUCTION</div><h2>Evidence, alongside the image.</h2><div class="pass-summary">${checks.filter((check) => check.pass).length} / ${checks.length} checks pass</div>${note(`Current surface (${fmtVec(state.hkl)}), a = ${fmt(state.a)} Å. These invariants check the mathematical engine; the source bundle adds exhaustive index, mesh and browser tests.`)}${checks.map((check) => `<div class="check-result"><b>${check.pass ? "✓" : "✕"}</b> ${check.name}<small>${fmt(check.actual, 7)} · expected ${fmt(check.expected, 7)}</small></div>`).join("")}`;
+  const checks = runChecks(state.a, state.hkl, state.load, state.structure);
+  return `<div class="eyebrow">CHECK THE CONSTRUCTION</div><h2>Evidence, alongside the image.</h2><div class="pass-summary">${checks.filter((check) => check.pass).length} / ${checks.length} checks pass</div>${note(`${state.structure === "fcc" ? "" : `${structure().short}. `}Current surface (${planeName(state.hkl)}), a = ${fmt(state.a)} Å. These invariants check the mathematical engine; the source bundle adds exhaustive index, mesh and browser tests.`)}${checks.map((check) => `<div class="check-result"><b>${check.pass ? "✓" : "✕"}</b> ${check.name}<small>${fmt(check.actual, 7)} · expected ${fmt(check.expected, 7)}</small></div>`).join("")}`;
 }
 
 /** Layers tab: on/off switches, colors and opacities of every drawing group. */
 function renderLayers() {
+  const S = structure();
   const layers = [
     ["Host atoms", "atoms", "color", "opacity"],
     ["Axes", "axes"],
@@ -1069,7 +1429,11 @@ function renderLayers() {
     ["3D primitive cell", "primitive", "surfaceColor"],
     ["Primitive vectors", "primitiveVectors"],
     ["Wigner–Seitz cell", "ws", "surfaceColor"],
-    ["Selected conventional box", "cellOn", "selectedColor"],
+    [
+      S.hexagonal ? "Selected unit-cell box" : "Selected conventional box",
+      "cellOn",
+      "selectedColor",
+    ],
     ["Primary planes", "plane", "planeColor", "planeOpacity"],
     ["Plane atom highlight", "highlight", "layerColor"],
     ["Plane labels", "planeLabels"],
@@ -1082,7 +1446,7 @@ function renderLayers() {
     ["2D primitive surface cell", "surfaceCell", "surfaceColor"],
     ["Surface vectors", "surfaceVectors"],
     ["Surface tiling", "tiling"],
-    ["Cubic surface mesh", "conventional"],
+    [S.hexagonal ? "a₁, a₂, c surface mesh" : "Cubic surface mesh", "conventional"],
     ["2D neighbor bonds", "bonds2d"],
     ["Neighbor shell", "neighbors", "neighborColor"],
     ["Neighbor bonds", "bonds"],
@@ -1101,30 +1465,30 @@ function renderLayers() {
       "Layers apply to their named workspace. Nothing must stay on. Explicit learning presets reset overlays; ordinary controls preserve them.",
     ) +
     `<button data-action="all-off">Turn all drawing layers off</button>${layers.map(([label, key, colorKey, opacityKey]) => `<div class="layer">${checkField(label, key)}${colorKey ? `<input aria-label="${label} color" type="color" data-key="${colorKey}" value="${state[colorKey]}">` : ""}${opacityKey ? `<input aria-label="${label} opacity" type="range" data-key="${opacityKey}" min="${opacityKey === "opacity" ? 0.05 : 0.03}" max="${opacityKey === "opacity" ? 1 : 0.8}" step=".01" value="${state[opacityKey]}">` : ""}</div>`).join("")}` +
-    selectField("Conventional boundaries", "bounds", [
+    selectField(S.hexagonal ? "Cell boundaries" : "Conventional boundaries", "bounds", [
       ["none", "None"],
       ["outer", "Outer box"],
-      ["all", "All conventional cells"],
+      ["all", S.hexagonal ? "All unit cells" : "All conventional cells"],
     ]) +
     selectField("Interstitial markers", "holes", [
       ["none", "None"],
-      ["octa", "Octahedral"],
-      ["tetra", "Tetrahedral"],
-      ["both", "Both"],
+      ...S.holes.map((hole) => [hole.type, hole.name]),
+      ["both", S.holes.length > 1 ? "Both" : "All"],
     ]) +
     checkField("Primitive isolation", "primitiveOnly") +
-    checkField("(111) registry coloring", "registryColor")
+    checkField(`${S.hexagonal ? "(0001)" : "(111)"} registry coloring`, "registryColor")
   );
 }
 
 /** Statistics strip under the viewer. */
 function renderStats() {
   const s = state;
-  const metrics = latticeMetrics(s.a);
-  const surface = surfaceCell(s.hkl, s.a);
-  const plane = planeInfo(s.hkl, s.a);
+  const S = structure();
+  const fcc = S.key === "fcc";
+  const metrics = metricsOf(S, s.a);
+  const surface = surfaceOf(S, s.hkl, s.a);
   const stack = buildStack(s.stack, s.layers, s.stackRepeat, s.separation, s.registries);
-  const reflection = reflectionInfo(s.reflection, s.a, s.lambda);
+  const reflection = reflectionOf(S, s.reflection, s.a, s.lambda);
   let stats;
 
   if (s.workspace === "animation") {
@@ -1161,7 +1525,13 @@ function renderStats() {
     ];
   } else if (s.workspace === "surface") {
     stats = [
-      ["Surface cell", `${fmt(surface.angle, 1)}°`, "one lattice site per cell"],
+      [
+        "Surface cell",
+        `${fmt(surface.angle, 1)}°`,
+        fcc || surface.atomsPerCell === 1
+          ? "one lattice site per cell"
+          : `${surface.atomsPerCell} atoms per cell`,
+      ],
       [
         "Vector lengths",
         surface.lengths.map((length) => fmt(length, 2)).join(" / "),
@@ -1179,14 +1549,21 @@ function renderStats() {
       ],
       ["Ideal layer gap", fmt(stack.height * s.a), "Å · before exaggeration"],
       ["Layers shown", s.registries || "None", `${s.layers} constructed layers`],
-      ["In-plane distance", fmt(metrics.nn), "Å · nearest contact"],
+      // The comparison stacks are built from close-packed layers in units of the FCC a.
+      ["In-plane distance", fmt(s.a / Math.SQRT2), "Å · nearest contact"],
     ];
   } else if (s.workspace === "reciprocal") {
     stats = [
       [
         "Reflection",
-        `(${fmtVec(s.reflection)})`,
-        reflection.allowed ? "allowed · F/f = 4" : "absent · F/f = 0",
+        `(${planeName(s.reflection)})`,
+        fcc
+          ? reflection.allowed
+            ? "allowed · F/f = 4"
+            : "absent · F/f = 0"
+          : reflection.allowed
+            ? `allowed · |F/f| = ${fmt(reflection.factor, 3)}`
+            : "absent · F/f = 0",
       ],
       ["Geometric d", fmt(reflection.d), "Å"],
       ["Wavevector |G|", fmt(reflection.magnitude), "Å⁻¹ · 2π convention"],
@@ -1201,27 +1578,35 @@ function renderStats() {
       ],
     ];
   } else {
+    const prism = S.hexagonal && s.hexPrism;
+    const cells = s.N.reduce((product, count) => product * count);
     stats = [
-      [
-        "Periodic atoms",
-        formatCount(4 * s.N.reduce((product, count) => product * count)),
-        `${s.N.join(" × ")} conventional cell${s.N.every((count) => count === 1) ? "" : "s"}`,
-      ],
+      prism
+        ? [
+            "Periodic atoms",
+            formatCount(6 * s.N[2]),
+            `hexagonal prism · ${s.N[2]} ${s.N[2] === 1 ? "story" : "stories"} of 3 unit cells`,
+          ]
+        : [
+            "Periodic atoms",
+            formatCount(S.unit.atoms * cells),
+            `${s.N.join(" × ")} ${S.hexagonal ? "unit" : "conventional"} cell${s.N.every((count) => count === 1) ? "" : "s"}`,
+          ],
       [
         "Base drawing",
-        s.atoms
-          ? formatCount(viewer?.count ?? latticeSites(s.N, s.mode === "unique").length)
-          : "Off",
+        s.atoms ? formatCount(viewer?.count ?? sitesOf(S, s.N, s.mode === "unique").length) : "Off",
         s.primitiveOnly
           ? "primitive tiling sites"
-          : {
-              closed: "closed drawing · all boundary sites",
-              ghost: "unique atoms + periodic ghosts",
-              unique: "unique atoms only",
-            }[s.mode],
+          : prism
+            ? "closed hexagonal prism"
+            : {
+                closed: "closed drawing · all boundary sites",
+                ghost: "unique atoms + periodic ghosts",
+                unique: "unique atoms only",
+              }[s.mode],
       ],
-      ["Nearest distance", fmt(metrics.nn), "Å · a / √2"],
-      ["Packing fraction", fmt(metrics.apf, 5), "π / (3√2)"],
+      ["Nearest distance", fmt(metrics.nn), fcc ? "Å · a / √2" : `Å · ${S.formulas.nearest}`],
+      ["Packing fraction", fmt(metrics.apf, 5), fcc ? "π / (3√2)" : S.formulas.apf],
     ];
   }
 
@@ -1242,6 +1627,7 @@ function renderInspector() {
   }
 
   const s = state;
+  const S = structure();
   const p = selection.p;
   const space = selection.space;
   const rows = [
@@ -1251,7 +1637,7 @@ function renderInspector() {
 
   if (space === "reciprocal") {
     rows.push(
-      ["Indices", `(${fmtVec(p)})`],
+      ["Indices", `(${planeName(selection.hkl ?? p)})`],
       ["G (Å⁻¹)", fmtVec(scale(p, (2 * Math.PI) / s.a))],
       [
         "Type",
@@ -1270,17 +1656,19 @@ function renderInspector() {
       ["Frame", "x ∥ [1 −1 0], y ∥ [1 1 −2], z ∥ [111]"],
     );
   } else {
-    const level = planeLevel(s.hkl, s.N, s.location, s.c, s.layer);
+    const f = fractionalOf(selection);
+    const region = regionOf(S, s);
+    const level = planeLevelOf(S, s.hkl, region.levelCells, s.location, s.c, s.layer);
     rows.push(
-      ["Conventional fractions", fmtVec(p)],
+      [S.hexagonal ? "Unit-cell fractions" : "Conventional fractions", fmtVec(f)],
       ["Cartesian (Å)", fmtVec(scale(p, s.a))],
-      ["Supercell fractions", fmtVec(p.map((value, axis) => value / s.N[axis]))],
-      ["Periodic wrap / a", fmtVec(p.map((value, axis) => mod(value, s.N[axis])))],
+      ["Supercell fractions", fmtVec(f.map((value, axis) => value / s.N[axis]))],
+      ["Periodic wrap / a", fmtVec(f.map((value, axis) => mod(value, s.N[axis])))],
       [
         "Owner cell (floor, clamped)",
-        fmtVec(p.map((value, axis) => Math.max(0, Math.min(s.N[axis] - 1, Math.floor(value))))),
+        fmtVec(f.map((value, axis) => Math.max(0, Math.min(s.N[axis] - 1, Math.floor(value))))),
       ],
-      ["On selected primary plane?", Math.abs(dot(p, s.hkl) - level) < 1e-7 ? "Yes" : "No"],
+      ["On selected primary plane?", Math.abs(dot(f, s.hkl) - level) < 1e-7 ? "Yes" : "No"],
     );
 
     if (selection.type) {
@@ -1290,7 +1678,7 @@ function renderInspector() {
         ["Maximum r/R", fmt(selection.ratio)],
       );
     } else {
-      rows.push(["Bulk host coordination", 12]);
+      rows.push(["Bulk host coordination", S.coordination]);
     }
 
     if (selection.weight !== undefined) {
@@ -1319,12 +1707,12 @@ function renderInspector() {
 /** Legend of what is currently drawn. */
 function renderLegend() {
   const s = state;
+  const S = structure();
   const items = [];
 
   if (s.workspace === "animation") {
     // Only what the current step shows.
     const layers = planeLayers(s);
-    const structure = layers.structure;
     const info = viewer?.cellNet?.info();
     const on = new Set(info?.visible ?? []);
     const letters = (info?.letters ?? []).sort(([x], [y]) => x.localeCompare(y));
@@ -1336,12 +1724,12 @@ function renderLegend() {
       items.push(
         on.has("color")
           ? ["linear-gradient(90deg,#3f8fc4,#e08a3c,#8e6bc9,#4aa37c)", "Balls colored by layer (s)"]
-          : [s.color, structure.key === "fcc" ? `${s.element} atoms` : `${structure.short} atoms`],
+          : [s.color, S.key === "fcc" ? `${s.element} atoms` : `${S.short} atoms`],
       );
     }
 
     if (on.has("plane")) items.push([s.planeColor, `(${layers.label}) plane`]);
-    if (on.has("cut")) items.push(["#e4572e", `Cut by the ${structure.cellName} walls`]);
+    if (on.has("cut")) items.push(["#e4572e", `Cut by the ${S.cellName} walls`]);
     if (on.has("conv") || (on.has("morphCell") && !on.has("morph") && layers.centered)) {
       items.push(["#5185a0", "Centered cell"]);
     }
@@ -1350,10 +1738,10 @@ function renderLegend() {
     }
     if (on.has("shift")) items.push([s.dirColor, "Interlayer shift"]);
     if (on.has("dmark")) items.push(["#63879d", "Layer spacing d"]);
-    if (on.has("avec")) items.push(["#36ad9c", structure.vectorLabels.join(", ")]);
+    if (on.has("avec")) items.push(["#36ad9c", S.vectorLabels.join(", ")]);
     if (on.has("diag")) items.push(["#d35f73", "[111] long diagonal"]);
     if (on.has("cube")) {
-      items.push(["#6c8b9e", structure.hexagonal ? "Hexagonal prism" : "Conventional cube"]);
+      items.push(["#6c8b9e", S.hexagonal ? "Hexagonal prism" : "Conventional cube"]);
     }
     if (on.has("grid")) items.push(["#9fb3bf", "Cells of the 3D array"]);
   } else if (s.workspace === "stacking") {
@@ -1396,25 +1784,32 @@ function renderLegend() {
       }
 
       if (s.conventional) {
-        items.push(["#5185a0", "Integer cubic-translation mesh"]);
+        items.push([
+          "#5185a0",
+          S.hexagonal ? "Integer a₁, a₂, c translation mesh" : "Integer cubic-translation mesh",
+        ]);
       }
 
       if (s.bonds2d) {
         items.push(["#aec3ce", "In-plane nearest-neighbor bonds"]);
       }
     } else {
-      if (s.mode === "ghost" && s.atoms) {
+      if (s.mode === "ghost" && s.atoms && !(S.hexagonal && s.hexPrism)) {
         items.push(["#b5cbd5", "Periodic boundary images"]);
       }
 
       if (s.registryColor && s.atoms) {
-        for (const registry of "ABC") {
-          items.push([s["color" + registry], `(111) ${registry} registry`]);
+        for (const registry of S.hexagonal ? "AB" : "ABC") {
+          items.push([
+            s["color" + registry],
+            `${S.hexagonal ? "(0001)" : "(111)"} ${registry} registry`,
+          ]);
         }
       }
 
       // Only list planes that were actually drawn (a plane can miss the box).
       const drawn = viewer?.drawn ?? { highlighted: true, planes: 1, comparison: true };
+      const region = regionOf(S, s);
 
       if (s.plane && drawn.planes) {
         items.push([
@@ -1422,8 +1817,8 @@ function renderLegend() {
           s.planeSet === "symmetry"
             ? "Symmetry family · multiple colors"
             : s.planeSet === "one"
-              ? `(${fmtVec(s.hkl)}) · c=${fmt(planeLevel(s.hkl, s.N, s.location, s.c, s.layer))}`
-              : `${drawn.planes} parallel (${fmtVec(s.hkl)}) planes`,
+              ? `(${planeName(s.hkl)}) · c=${fmt(planeLevelOf(S, s.hkl, region.levelCells, s.location, s.c, s.layer))}`
+              : `${drawn.planes} parallel (${planeName(s.hkl)}) planes`,
         ]);
       }
 
@@ -1436,7 +1831,7 @@ function renderLegend() {
       }
 
       if (s.direction) {
-        items.push([s.dirColor, `${fmt(s.scale)}a [${fmtVec(s.uvw)}]`]);
+        items.push([s.dirColor, `${fmt(s.scale)}a [${directionName(s.uvw)}]`]);
       }
 
       if (s.dir2) {
@@ -1459,19 +1854,33 @@ function renderLegend() {
         items.push([s.neighborColor, "Bulk neighbor shell"]);
       }
 
-      if (["octa", "both"].includes(s.holes)) {
+      const holeTypes = S.holes
+        .map((hole) => hole.type)
+        .filter((type) => s.holes === "both" || s.holes === type);
+
+      if (holeTypes.includes("cubic")) {
+        items.push(["#5e9fce", "Cubic empty sites"]);
+      }
+
+      if (holeTypes.includes("octa")) {
         items.push(["#cc7aae", "Octahedral empty sites"]);
       }
 
-      if (["tetra", "both"].includes(s.holes)) {
+      if (holeTypes.includes("tetra")) {
         items.push(["#c6a139", "Tetrahedral empty sites"]);
       }
 
       if (s.slip) {
-        items.push([s.planeColor, "{111} slip plane"], [s.dirColor, "Perfect Burgers vector"]);
+        items.push(
+          [
+            s.planeColor,
+            S.hexagonal ? "⟨a⟩ slip plane" : `${S.slip.name.split("⟨")[0]} slip plane`,
+          ],
+          [s.dirColor, "Perfect Burgers vector"],
+        );
       }
 
-      if (s.partials) {
+      if (s.partials && partialsOf(S)) {
         items.push(
           ["#da8c48", "First Shockley partial"],
           ["#9665c2", "Second Shockley partial"],
@@ -1509,9 +1918,22 @@ function render({ fit = false, controls = true, panel = true } = {}) {
     viewer?.draw(s, selection, fit);
   }
 
+  const S = structure();
   const view = { surface: "SINGLE-LAYER NET", animation: "CELL ⇄ NET ANIMATION" }[s.workspace];
   $("#eyebrow").textContent =
-    `${TOPICS.find((topic) => topic[0] === s.topic)[1].toUpperCase()} / ${view ?? s.workspace.toUpperCase() + " VIEW"}`;
+    `${S.short} · ${TOPICS.find((topic) => topic[0] === s.topic)[1].toUpperCase()} / ${view ?? s.workspace.toUpperCase() + " VIEW"}`;
+  // Look-along buttons and the export note follow the structure ([u v t w] labels for HCP).
+  const looks = S.hexagonal
+    ? STRUCTURES.hcp.looks
+    : ["1 0 0", "0 1 0", "0 0 1", "1 1 0", "1 0 1", "0 1 1", "1 1 1"].map((value) => [
+        value,
+        `[${value.replaceAll(" ", "")}]`,
+      ]);
+  $$("[data-look]").forEach((button, index) => {
+    [button.dataset.look, button.textContent] = looks[index];
+  });
+  $("#exports small").textContent =
+    `Ideal bulk ${S.short} ${S.hexagonal ? "unit-cell " : ""}supercell`;
   $("#question").textContent = headerQuestion();
   $("#topics").innerHTML = TOPICS.map(
     ([key, title], index) =>
@@ -1584,7 +2006,7 @@ function render({ fit = false, controls = true, panel = true } = {}) {
 /** Jump to a guided-tour lesson. */
 function startLesson(index) {
   const [conceptKey, , presetKey] = LESSONS[index];
-  applyPreset(presetKey);
+  applyPreset(presetKey, { lesson: true });
   concept = conceptKey;
   update({ lesson: index });
 }
@@ -1707,20 +2129,32 @@ function applyInput(input, live = false) {
           : input.value;
 
     if (["hkl", "uvw", "hkl2", "uvw2", "load", "reflection"].includes(key)) {
-      // HCP planes may also be typed as (h k i l).
-      value = parseIndices(
-        (key === "hkl" && structureKey() === "hcp" && fromMillerBravais(value)) || value,
-      );
+      // HCP planes may also be typed as (h k i l), and directions as [u v t w].
+      const fourIndex = structure().hexagonal
+        ? ["uvw", "uvw2", "load"].includes(key)
+          ? fromBravaisDirection(value)
+          : fromMillerBravais(value)
+        : null;
+      value = parseIndices(fourIndex || value);
     }
 
-    // HCP indices refer to a₁, a₂, c: start from the basal plane unless the plane is an HCP pick.
-    if (
-      key === "animStructure" &&
-      value === "hcp" &&
-      !STRUCTURES.hcp.planes.some(([indices]) => indices === fmtVec(state.hkl))
-    ) {
-      update({ animStructure: value, hkl: [0, 0, 1] });
-      toast("HCP uses hexagonal axes a₁, a₂, c: starting from the basal plane (0001).");
+    if (key === "structure") {
+      const patch = structureDefaults(value, state);
+      update(patch, { fit: true });
+      const notes = [];
+      if (patch.element) {
+        notes.push(
+          `${STRUCTURES[value].short}: ${EXAMPLES[value].name}, a = ${EXAMPLES[value].a} Å (change it under Lattice parameter).`,
+        );
+      }
+      if (patch.hkl) {
+        notes.push(
+          "HCP uses hexagonal axes a₁, a₂, c: the plane starts as the basal plane (0001).",
+        );
+      }
+      if (notes.length) {
+        toast(notes.join(" "));
+      }
       return;
     }
 
@@ -1881,7 +2315,7 @@ document.addEventListener("click", async (event) => {
         if (state.workspace === "surface") {
           toast("The 2D view is already normal to its selected plane.");
         } else {
-          viewer?.look(parseIndices(button.dataset.look));
+          viewer?.look(lookVector(parseIndices(button.dataset.look)));
         }
         return;
       }
@@ -1916,15 +2350,19 @@ document.addEventListener("click", async (event) => {
             throw new Error("3D export needs an available WebGL renderer.");
           }
 
-          download("FCC-current-view.png", image);
+          download(`${structure().short}-current-view.png`, image);
         } else if (format === "svg") {
           surfaceView.draw(state, selection);
-          download("FCC-surface-net.svg", surfaceView.svg, "image/svg+xml");
+          download(`${structure().short}-surface-net.svg`, surfaceView.svg, "image/svg+xml");
         } else if (format === "report") {
-          download("FCC-calculation-report.md", calculationReport(state), "text/markdown");
+          download(
+            `${structure().short}-calculation-report.md`,
+            calculationReport(state),
+            "text/markdown",
+          );
         } else {
           download(
-            format === "poscar" ? "POSCAR" : `FCC-bulk.${format}`,
+            format === "poscar" ? "POSCAR" : `${structure().short}-bulk.${format}`,
             structureFile(state, format),
             "text/plain",
           );
@@ -1954,14 +2392,14 @@ document.addEventListener("click", async (event) => {
           state.workspace === "stacking"
             ? [0, 0, 1]
             : state.workspace === "reciprocal"
-              ? state.reflection
-              : state.hkl,
+              ? planeNormal(structure(), state.reflection)
+              : planeNormal(structure(), state.hkl),
         );
         return;
       }
 
       if (button.id === "look-dir") {
-        viewer?.look(state.uvw);
+        viewer?.look(directionVector(structure(), state.uvw));
         return;
       }
 
@@ -1999,7 +2437,7 @@ document.addEventListener("click", async (event) => {
 
       switch (button.dataset.action) {
         case "custom-look":
-          viewer?.look(parseIndices($("#custom-look").value));
+          viewer?.look(lookVector(parseIndices($("#custom-look").value)));
           break;
         case "use-layer":
           update({ location: "layer", layer: currentLayer() });
@@ -2017,9 +2455,10 @@ document.addEventListener("click", async (event) => {
           update({ lesson: -1 });
           break;
         case "all-off": {
+          // The HCP prism choice is a cell shape, not a drawing layer.
           const off = Object.fromEntries(
             Object.entries(DEFAULT_STATE)
-              .filter(([key, value]) => typeof value === "boolean")
+              .filter(([key, value]) => typeof value === "boolean" && key !== "hexPrism")
               .map(([key]) => [key, false]),
           );
           update({ ...off, bounds: "none", holes: "none", labels: "none", registries: "" });
@@ -2032,7 +2471,7 @@ document.addEventListener("click", async (event) => {
             break;
           }
 
-          const family = cubicFamily(state.hkl);
+          const family = familyOf(structure(), state.hkl);
           let step = 0;
           update({ plane: true, planeSet: "one" });
           animationTimer = setInterval(() => {
@@ -2090,11 +2529,13 @@ $("#load-file").addEventListener("change", async (event) => {
 
 $("#search").addEventListener("input", (event) => {
   const query = event.target.value.trim().toLowerCase();
-  const matches = Object.entries(CONCEPTS).filter(([key, info]) =>
-    (key + " " + info.title + " " + info.question + " " + info.keywords)
-      .toLowerCase()
-      .includes(query),
-  );
+  const matches = Object.keys(CONCEPTS)
+    .map((key) => [key, conceptFor(key, state.structure)])
+    .filter(([key, info]) =>
+      (key + " " + info.title + " " + info.question + " " + info.keywords)
+        .toLowerCase()
+        .includes(query),
+    );
   $("#search-results").hidden = !query;
   $("#search-results").innerHTML = matches.length
     ? matches
@@ -2120,7 +2561,7 @@ window.FCC_EXPLORER = {
   getSelection: () => (selection ? structuredClone(selection) : null),
   setState: update,
   preset: applyPreset,
-  verify: () => runChecks(state.a, state.hkl, state.load),
+  verify: () => runChecks(state.a, state.hkl, state.load, state.structure),
   viewer,
   surfaceViewer: surfaceView,
   structure: (format) => structureFile(state, format),

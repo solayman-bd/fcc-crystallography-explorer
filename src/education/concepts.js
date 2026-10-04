@@ -247,6 +247,354 @@ export const CONCEPTS = {
   },
 };
 
+/**
+ * What changes for simple cubic, BCC and HCP. Each entry overrides fields of the FCC concept
+ * above; fields left out (and the cell ⇄ net concept) read the same for every structure.
+ */
+const SURFACE_INTRO =
+  "Translations within one atomic layer form a two-dimensional lattice. We construct an exact integer kernel in the primitive basis of the structure, then reduce its two vectors without changing the lattice.";
+
+const STRUCTURE_CONCEPTS = {
+  sc: {
+    crystal: {
+      title: "One cell. One atom. Eight visible sites.",
+      question: "Why does simple cubic have one atom per cell?",
+      intro:
+        "Extend the cube in all three directions. Each corner is shared by eight cubes, so the eight corner spheres add up to one atom. Full spheres show where the lattice sites are; fractions tell you how much belongs to one cell.",
+      equation: "8 × ⅛ = 1",
+      view: "The default drawing includes all eight corners. Unique mode keeps one corner per cell (a half-open computational box). Ghost mode completes the visible boundaries with distinguished periodic images.",
+      confusion:
+        "One atom per cell does not mean a cell drawing should show one sphere. Simple cubic is rare among metals (polonium); it is the easiest lattice for counting.",
+      try: "Switch on capped boundary spheres: eight ⅛ pieces make one atom.",
+    },
+    primitive: {
+      title: "Here the cube is already primitive.",
+      question: "Is the simple cubic cell primitive?",
+      intro:
+        "The three cube edges are the shortest lattice translations, and the cube holds one lattice point after sharing, so it is already the primitive cell. The Wigner–Seitz cell is a cube of the same volume centered on an atom.",
+      equation: "p₁=a[100], p₂=a[010], p₃=a[001]; V=a³",
+      view: "Purple edges show the primitive cell; for simple cubic they coincide with the conventional cube. The Wigner–Seitz cell is the same cube, shifted to surround one atom.",
+      confusion:
+        "Conventional and primitive cells are different choices in general, but for simple cubic they are the same cube.",
+      try: "Compare the primitive volumes of SC (a³), BCC (a³/2) and FCC (a³/4) with the structure selector.",
+    },
+    directions: {
+      question: "Which vectors along [uvw] are simple cubic translations?",
+      intro:
+        "Integer [u v w] defines an orientation in the cubic basis. An actual vector also needs a scale. In simple cubic, a[uvw] is a lattice translation and no shorter fraction of a reduced [uvw] is.",
+      equation: "r = a[u v w], with u, v, w integers",
+      confusion:
+        "The shortest pure [111] repeat is √3a, which is three times d₁₁₁ = a/√3, not d₁₁₁ itself.",
+    },
+    spacing: {
+      question: "Why does d equal the layer spacing in simple cubic?",
+      intro:
+        "Geometric d_hkl measures a unit change of c. In simple cubic every integer level c of reduced (hkl) holds atoms, so the layer spacing equals d_hkl; the pure normal repeat can still span several layers.",
+      equation: "d = a/|hkl|; layers at every integer c",
+      view: "For (111), layers are a/√3 apart and cycle A→B→C; the pure repeat along [111] is √3a. For (001), layers are a apart and stack straight on top of each other.",
+      confusion:
+        "Rescaling (111) to (222) halves d_hkl but does not move a single atom: the real layer spacing stays a/√3.",
+    },
+    surface: {
+      intro: SURFACE_INTRO,
+      equation: "h·m₁ + k·m₂ + l·m₃ = 0 (primitive basis = cube edges)",
+      view: "The purple surface cell has one lattice point after sharing. Area times the layer step equals the primitive volume a³, certifying a primitive cell. The 2D viewer analytically projects just this layer onto orthogonal in-plane axes.",
+      try: "Compare (001), (110) and (111). Calculate shows the actual integer basis; Verify checks primitivity.",
+    },
+    packing: {
+      title: "Touching along a cube edge.",
+      question: "Where does R = a/2 come from?",
+      intro:
+        "In simple cubic the nearest neighbors sit along the cube edges, a apart, so touching spheres have 2R = a. They fill only about 52% of space.",
+      equation: "2R=a; dNN=a; APF=π/6",
+      view: "Simple cubic {100} layers are square nets: each atom has four neighbors in its layer and one directly above and below.",
+      try: "Choose hard-sphere mode, open the (001) surface net and count the four contacts.",
+    },
+    stacking: {
+      confusion:
+        "The letters are not chemical species. This workspace compares close-packed layers (FCC ABC, HCP ABAB), which simple cubic does not have; the layer stacking of any simple cubic plane is in Cell ⇄ Net.",
+    },
+    neighbors: {
+      title: "Six neighbors, including those beyond the box.",
+      question: "Where are the six nearest neighbors in simple cubic?",
+      intro:
+        "A finite drawing does not truncate an infinite crystal. Bulk neighbors come from lattice translations around the chosen host, including periodic images outside the box.",
+      equation: "Shells: 6 at a; 12 at a√2; 8 at a√3",
+      view: "The selected center remains highlighted. Gold spheres and bonds show the included shells. The first-shell coordination hull is an octahedron. A cutoff can remove part of a shell; it does not redefine ideal bulk coordination.",
+      try: "Select a corner, show the first shell, and count the neighbors outside the cube.",
+    },
+    interstitials: {
+      title: "One large hole in the middle.",
+      question: "Where is the simple cubic hole?",
+      intro:
+        "Interstitial markers show potential positions between host atoms; they are empty in the ideal monatomic crystal. In simple cubic the large hole is the cube center, with eight hosts at a√3/2.",
+      equation: "Cubic: 1/cell, 8 hosts, r/R=√3−1",
+      view: "Blue markers identify the cubic holes. Click a marker to connect its hosts. Low host opacity helps pick a hole through the drawing.",
+      confusion:
+        "BCC puts an atom exactly at this position; simple cubic leaves it empty. Radius ratios assume equal touching, undistorted hard spheres.",
+      try: "Click the body-center marker and show its eight hosts.",
+    },
+    slip: {
+      question: "Why are there six simple cubic slip systems?",
+      intro:
+        "Simple cubic slips on {100} planes along ⟨100⟩, its shortest translation: three planes, each containing two in-plane directions.",
+      equation: "{100}⟨010⟩; b=a⟨100⟩; m=|l̂·n̂| |l̂·b̂|",
+      view: "The sheet shows a slip plane translated through the box center. The arrow shows its Burgers vector. Calculate lists Schmid factors for all six systems; clicking a row selects that system.",
+    },
+    partials: {
+      title: "No simple partials here.",
+      question: "Do simple cubic crystals have Shockley partials?",
+      intro:
+        "Shockley partials split a perfect vector on a close-packed plane and leave a stacking fault between them. Simple cubic has no close-packed plane, so this construction is shown for FCC and HCP.",
+      equation: "FCC: a/2⟨110⟩ = a/6⟨211⟩ + a/6⟨121⟩; HCP: a/3⟨11−20⟩ = a/3⟨10−10⟩ + a/3⟨01−10⟩",
+      view: "Choose FCC or HCP in Crystal & unit cells to see the partial-vector triangle.",
+      try: "Switch to FCC and look along [111] to see the Shockley partials.",
+    },
+    reciprocal: {
+      question: "Why are all simple cubic reflections allowed?",
+      intro:
+        "With one atom per cube, every (hkl) scatters in phase: the reciprocal lattice is simple cubic with edge 2π/a, and no reflection is absent.",
+      equation: "F/f = 1",
+      view: "Purple nodes form the reciprocal simple cubic lattice. Grid units are 2π/a Å⁻¹; (000) is the forward-scattering origin.",
+      try: "Compare (100), (110) and (111), then change the wavelength and check λ≤2d.",
+    },
+  },
+  bcc: {
+    crystal: {
+      title: "One cell. Two atoms. Nine visible sites.",
+      question: "Why does BCC have two atoms per cell?",
+      intro:
+        "Extend the cube in all three directions. Each corner is shared by eight cubes; the body center belongs to this cube alone. Full spheres show where the lattice sites are; fractions tell you how much belongs to one cell.",
+      equation: "8 × ⅛ + 1 = 2",
+      view: "The default drawing includes all eight corners and the body center. Unique mode deliberately uses a half-open computational box. Ghost mode completes the visible boundaries with distinguished periodic images.",
+      confusion:
+        "The body center is not a different kind of site: it is a corner of the neighboring cubes shifted by a/2[111]. Every BCC atom has the same surroundings.",
+      try: "Switch on capped boundary spheres, then compare closed, unique and ghost modes.",
+    },
+    primitive: {
+      question: "How can the BCC primitive cell be half the cube?",
+      intro:
+        "The conventional cube shows the cubic symmetry. Three translations from a corner to the body centers of neighboring cubes tile exactly the same lattice. Their rhombohedron contains one lattice point after sharing.",
+      equation: "p₁=(a/2)[−111], p₂=(a/2)[1−11], p₃=(a/2)[11−1]",
+      view: "Purple edges show the 3D primitive cell. Its three lengths are a√3/2, its angles 109.47°, and its volume a³/2. The Wigner–Seitz cell, a truncated octahedron, has the same volume.",
+      confusion:
+        "Primitive does not mean cubic, and part of the primitive cell lies outside the cube. A 3D primitive cell is not a 2D primitive surface cell.",
+    },
+    directions: {
+      question: "Is a/2[uvw] a BCC lattice translation?",
+      intro:
+        "Integer [u v w] defines an orientation in the cubic basis. An actual vector also needs a scale. a[uvw] is always a BCC translation; a/2[uvw] is one when u, v and w are all odd, such as a/2[111] to the body center.",
+      equation: "r = (a/2)[i j k], with i, j, k all even or all odd",
+      confusion:
+        "[110] is a valid direction, but a/2[110] is not a BCC translation: the shortest repeat along [110] is a√2. Along [111] it is a√3/2, the nearest-neighbor distance.",
+      try: "Compare [100], [110] and [111], then inspect the shortest repeats in Calculate.",
+    },
+    spacing: {
+      question: "Why is d₁₀₀ not the BCC layer spacing?",
+      intro:
+        "Geometric d_hkl measures a unit change of c. Atoms occupy c levels from the corners and from the body centers: when h + k + l is odd, the body centers add a layer halfway between.",
+      equation: "d=a/|hkl|; layers every Δc = ½ (h+k+l odd) or 1 (even)",
+      view: "For (001), corner and body-center layers alternate a/2 apart, half of d₀₀₁ = a. For (110), the densest plane, layers are a/√2 apart and stack ABAB. For (111) they cycle ABC, a/(2√3) apart.",
+      confusion:
+        "The forbidden BCC (100) reflection goes with those extra body-center layers halfway between the (100) planes; it does not mean a BCC (100) surface cannot exist.",
+    },
+    surface: {
+      intro: SURFACE_INTRO,
+      equation: "(−h+k+l)m₁ + (h−k+l)m₂ + (h+k−l)m₃ = 0",
+      view: "The purple surface cell has one lattice point after sharing. Area times the layer step equals the primitive volume a³/2, certifying a primitive cell. The 2D viewer analytically projects just this layer onto orthogonal in-plane axes.",
+      try: "Compare (001), (110) and (111). (110) is the densest BCC plane: a centered-rectangular net.",
+    },
+    packing: {
+      title: "Touching along a body diagonal.",
+      question: "Where does R = a√3/4 come from?",
+      intro:
+        "The body diagonal connects a corner, the body center and the opposite corner. Its length a√3 holds two nearest-neighbor distances, or four radii for touching equal spheres.",
+      equation: "4R=a√3; dNN=a√3/2; APF=π√3/8",
+      view: "BCC {110} planes are the densest: a centered-rectangular net in which each atom has four in-layer neighbors. The close-packed directions belong to ⟨111⟩.",
+      try: "Choose hard-sphere mode, open the (110) surface net and inspect the contacts.",
+    },
+    stacking: {
+      confusion:
+        "The letters are not chemical species. This workspace compares close-packed layers (FCC ABC, HCP ABAB), which BCC does not have; the layer stacking of any BCC plane, such as (110) ABAB, is in Cell ⇄ Net.",
+    },
+    neighbors: {
+      title: "Eight neighbors, and six more close behind.",
+      question: "Where are the eight nearest neighbors in BCC?",
+      intro:
+        "A finite drawing does not truncate an infinite crystal. Bulk neighbors come from lattice translations around the chosen host, including periodic images outside the box.",
+      equation: "Shells: 8 at a√3/2; 6 at a; 12 at a√2",
+      view: "The selected center remains highlighted. Gold spheres and bonds show the included shells. The first-shell coordination hull is a cube. A cutoff can remove part of a shell; it does not redefine ideal bulk coordination.",
+      confusion:
+        "The six second neighbors are only 15% farther than the first eight, so BCC is often described as 8 + 6 coordinated. Bulk coordination differs from coordination within a single surface layer.",
+      try: "Select the body center, show two shells, and compare the distances in Calculate.",
+    },
+    interstitials: {
+      question: "Why are BCC holes smaller than FCC holes?",
+      intro:
+        "Interstitial markers show potential positions between host atoms; they are empty in the ideal monatomic crystal. BCC octahedral holes sit at face centers and edge midpoints (6 per cell) and are distorted: two hosts at a/2, four at a/√2. Tetrahedral holes, such as (½, ¼, 0), number 12 per cell.",
+      equation: "Octa: 6/cell, r/R=2/√3−1; Tetra: 12/cell, r/R=√(5/3)−1",
+      confusion:
+        "In BCC the tetrahedral holes are larger than the octahedral ones, the reverse of FCC. Carbon in α-iron still prefers the octahedral sites, because it only has to push the two near hosts apart.",
+      try: "Click a face-center octahedral marker, then a tetrahedral marker on a face.",
+    },
+    slip: {
+      question: "Why are there twelve BCC {110} slip systems?",
+      intro:
+        "BCC has no close-packed plane. It slips along the close-packed ⟨111⟩ directions, most often on the six {110} planes, each containing two ⟨111⟩: twelve systems. {112} and {123} planes can also act.",
+      equation: "{110}⟨111⟩; b=(a/2)⟨111⟩; m=|l̂·n̂| |l̂·b̂|",
+    },
+    partials: {
+      title: "No simple partials here.",
+      question: "Do BCC crystals have Shockley partials?",
+      intro:
+        "Shockley partials split a perfect vector on a close-packed plane and leave a stacking fault between them. BCC has no close-packed plane, so this construction is shown for FCC and HCP.",
+      equation: "FCC: a/2⟨110⟩ = a/6⟨211⟩ + a/6⟨121⟩; HCP: a/3⟨11−20⟩ = a/3⟨10−10⟩ + a/3⟨01−10⟩",
+      view: "Choose FCC or HCP in Crystal & unit cells to see the partial-vector triangle.",
+      try: "Switch to FCC and look along [111] to see the Shockley partials.",
+    },
+    reciprocal: {
+      question: "Why are some BCC reflections absent?",
+      intro:
+        "Equal scatterers at the corner and the body center contribute phases that cancel when h + k + l is odd and add when it is even. The allowed nodes form a reciprocal FCC lattice.",
+      equation: "F/f = 1 + (−1)^(h+k+l)",
+      view: "Purple nodes form the reciprocal FCC lattice, with conventional edge 4π/a. Grid units are 2π/a Å⁻¹. Faint forbidden positions are comparison markers, not reciprocal-lattice nodes; (000) is the forward-scattering origin.",
+      try: "Compare (110), (200), (211) with (100), (111), then change wavelength and check λ≤2d.",
+    },
+  },
+  hcp: {
+    crystal: {
+      title: "A hexagonal prism of three unit cells.",
+      question: "Why does the HCP prism hold six atoms?",
+      intro:
+        "HCP repeats a hexagonal unit cell a₁, a₂, c (a 120° rhombic prism) with two atoms: A at the corners, B inside. Three unit cells make the familiar hexagonal prism: 12 corners shared by six prisms, 2 face centers shared by two, and 3 atoms inside.",
+      equation: "12 × ⅙ + 2 × ½ + 3 = 6; unit cell: 8 × ⅛ + 1 = 2",
+      view: "The prism drawing shows every corner and face center. Turn the prism off to see the unit-cell supercell, where unique and ghost modes and capped spheres follow the slanted cell faces. The ideal axial ratio c/a = √(8/3) ≈ 1.633.",
+      confusion:
+        "HCP is not a Bravais lattice: A and B atoms have mirrored surroundings, so the 2-atom basis is part of the structure. The prism is three unit cells, not the primitive cell.",
+      try: "Switch on capped boundary spheres and count ⅙ corners, ½ face centers and whole inside atoms.",
+    },
+    primitive: {
+      title: "The unit cell is already primitive.",
+      question: "What is the HCP primitive cell?",
+      intro:
+        "The hexagonal lattice of HCP is spanned by a₁, a₂ (equal, 120° apart) and c. That rhombic prism is primitive for the lattice, but it carries two atoms, A and B: the basis.",
+      equation: "a₁ = a[100], a₂ = a[−½ √3/2 0], c = a√(8/3)[001]; V = (√3/2)a²c",
+      view: "Purple edges show the primitive cell, the same as the hexagonal unit cell. The Wigner–Seitz cell of the hexagonal lattice is a hexagonal prism of the same volume.",
+      confusion:
+        "Two atoms per primitive cell does not make the cell non-primitive: the B atom is not a lattice translation of A.",
+      try: "Isolate the primitive tiling and find the B atom inside each cell.",
+    },
+    coordinates: {
+      intro:
+        "In HCP the unit-cell axes a₁, a₂ and c are not orthogonal, so fractional coordinates (f₁, f₂, f₃) and Cartesian r are related by r = f₁a₁ + f₂a₂ + f₃c. The B atom sits at (⅓, ⅔, ½).",
+      equation: "r = f₁a₁ + f₂a₂ + f₃c",
+      view: "Click a site to compare unit-cell fractions, Cartesian Å, supercell fractions and periodic wrapping. Turn the prism off to see the unit-cell supercell.",
+      try: "Click a B atom and compare its fractions with its Cartesian coordinates.",
+    },
+    directions: {
+      question: "How do HCP directions [u v t w] work?",
+      intro:
+        "HCP directions use the axes a₁, a₂ (120° apart) and c. The three-index [u v w] means u a₁ + v a₂ + w c; the four-index [u v t w] form adds t = −(u + v), so symmetry-equivalent directions look alike: [2−1−10], [−12−10] and [−1−120] are a₁, a₂ and a₃.",
+      equation: "[U V W] → [u v t w] = [(2U−V)/3, (2V−U)/3, −(U+V)/3, W]",
+      view: "Arrow labels use the four-index form. Type three or four indices; a four-index direction must have t = −(u + v).",
+      confusion:
+        "[1 0 0] in three indices is a₁, written [2 −1 −1 0] in four. The shortest translations are a along ⟨11−20⟩ and c along [0001].",
+      try: "Compare [2−1−10], [10−10] and [0001] and their shortest repeats in Calculate.",
+    },
+    planes: {
+      question: "How do I read an HCP plane (h k i l)?",
+      intro:
+        "HCP planes use the axes a₁, a₂ and c. The Miller–Bravais form (h k i l) adds i = −(h + k), so equivalent planes look alike: the six prism planes are (10−10), (01−10), (−1100) and their opposites. The plane h·f₁ + k·f₂ + l·f₃ = c is located like a cubic one, in fractional coordinates.",
+      equation: "h f₁ + k f₂ + l f₃ = c; i = −(h + k)",
+      view: "Planes are clipped to the hexagonal prism, or to the unit-cell supercell. Highlighted atoms lie exactly on the plane.",
+      confusion:
+        "In HCP, (h k l) and [h k l] are not perpendicular in general; the plane normal is G = h b₁ + k b₂ + l b₃.",
+      try: "Compare (0001), (10−10) and (11−20), then the hexagonal symmetry family of (10−11).",
+    },
+    spacing: {
+      title: "Spacings that alternate.",
+      question: "Why do HCP layer spacings alternate?",
+      intro:
+        "HCP has two atoms per lattice point. On (0001) the B atoms add a layer halfway, so layers are c/2 apart (ABAB). On prism planes such as (10−10) the B layers sit off-center, so the spacings alternate between a√3/6 and a√3/3.",
+      equation: "d = 1/|G|, G = h b₁ + k b₂ + l b₃",
+      view: "Calculate lists every layer level and spacing. The pure normal repeat is the shortest lattice vector along G.",
+      confusion:
+        "The layer spacing of a structure with a basis can be unequal; d_hkl alone does not tell you where the atoms are.",
+      try: "Compare (0001), (10−10) and (11−20) in Calculate.",
+    },
+    surface: {
+      intro: SURFACE_INTRO,
+      equation: "h·m₁ + k·m₂ + l·m₃ = 0 on a₁, a₂, c",
+      view: "The purple surface cell has one or two atoms: (0001) and (10−10) layers hold one, (11−20) layers both basis atoms. Area times the lattice-layer step equals the primitive volume (√3/2)a²c.",
+      confusion:
+        "Projecting all atoms through a thick slab gives a different picture. The dashed integer a₁, a₂, c translation mesh is not necessarily the primitive surface cell.",
+      try: "Compare (0001), (10−10) and (11−20). Calculate shows the actual integer basis.",
+    },
+    packing: {
+      title: "Touching in the basal plane.",
+      question: "How does HCP reach 74% packing?",
+      intro:
+        "In each (0001) layer the spheres touch along a₁, so 2R = a. B atoms sit over half of the hollows, touching three A atoms below and three above; the ideal c/a = √(8/3) makes all twelve contacts equal.",
+      equation: "2R=a; dNN=a; c/a=√(8/3); APF=π/(3√2)",
+      view: "HCP (0001) layers are close packed like FCC {111}; they stack ABAB instead of ABCABC.",
+      try: "Choose hard-sphere mode, open the (0001) surface net and inspect the six contacts.",
+    },
+    stacking: {
+      question: "How does HCP stack its close-packed layers?",
+      intro:
+        "A, B and C tell you how a triangular layer is shifted sideways. HCP reuses A on every second layer (ABAB); FCC uses all three registries (ABCABC).",
+      try: "Choose Ideal HCP · ABAB, look normal, then from the side; compare with FCC · ABCABC.",
+    },
+    neighbors: {
+      equation: "Shells: 12 at a; 6 at a√2; 2 at c = a√(8/3)",
+      view: "The selected center remains highlighted. Gold spheres and bonds show the included shells. The first-shell coordination hull is an anticuboctahedron. A cutoff can remove part of a shell; it does not redefine ideal bulk coordination.",
+      confusion:
+        "The twelve HCP neighbors look like FCC's, but the triangles above and below are not rotated: an anticuboctahedron, not a cuboctahedron.",
+      try: "Select an atom, show the first shell, and compare it with FCC's.",
+    },
+    interstitials: {
+      question: "Where are the holes in HCP?",
+      intro:
+        "Interstitial markers show potential positions between host atoms; they are empty in the ideal monatomic crystal. As in FCC, each pair of close-packed layers makes octahedral and tetrahedral holes: 2 octahedral and 4 tetrahedral per unit cell.",
+      equation: "Octa: 2/cell, r/R=√2−1; Tetra: 4/cell, r/R=√(3/2)−1",
+      confusion:
+        "The hole sizes match FCC because both are close packed; only the stacking of the layers that form them differs.",
+      try: "Click an octahedral marker between an A and a B layer.",
+    },
+    slip: {
+      question: "Which HCP slip systems share the ⟨a⟩ vector?",
+      intro:
+        "HCP slips along ⟨11−20⟩ with |b| = a. The basal plane (0001) has 3 systems, the prism planes {10−10} 3 and the first-order pyramidal planes {10−11} 6: twelve ⟨a⟩ systems. None of them can stretch the crystal along c; that needs ⟨c+a⟩ slip or twinning.",
+      equation: "b=(a/3)⟨11−20⟩; basal 3 + prismatic 3 + pyramidal 6",
+      view: "The sheet shows a slip plane translated through the region center. The arrow shows its Burgers vector. Calculate lists Schmid factors for all twelve systems; clicking a row selects that system.",
+      try: "Compare loading along [0001] (all ⟨a⟩ factors are 0) with [2−1−10].",
+    },
+    partials: {
+      title: "Two basal partials sum to one ⟨a⟩ vector.",
+      question: "How do HCP basal partials add up?",
+      intro:
+        "On the basal plane a perfect a/3[11−20] vector can split geometrically into two Shockley partials a/3[10−10] and a/3[01−10], each of length a/√3.",
+      equation: "a/3[11−20] = a/3[10−10] + a/3[01−10]",
+      view: "The two partial arrows are placed head to tail; the third arrow is their sum. All three lie in (0001). The perfect magnitude is a, and each partial magnitude a/√3.",
+      try: "Look along [0001] and verify the vector sum.",
+    },
+    reciprocal: {
+      question: "Why are some HCP reflections absent?",
+      intro:
+        "The A and B atoms at (0,0,0) and (⅓,⅔,½) scatter with phase 2π(h/3 + 2k/3 + l/2). When h + 2k is a multiple of 3 and l is odd they cancel, so (0001) is absent but (0002) is allowed.",
+      equation: "|F/f| = |1 + e^(2πi(h/3 + 2k/3 + l/2))|",
+      view: "Purple nodes form the hexagonal reciprocal lattice. Grid units are 2π/a Å⁻¹; faint markers are forbidden positions, not reciprocal-lattice nodes.",
+      try: "Compare (0001), (0002) and (10−11), then change the wavelength and check λ≤2d.",
+    },
+  },
+};
+
+/** The concept text for a structure: the FCC text with that structure's overrides. */
+export const conceptFor = (key, structure = "fcc") => ({
+  ...CONCEPTS[key],
+  ...(STRUCTURE_CONCEPTS[structure]?.[key] ?? {}),
+});
+
 /** The guided tour: [concept, title, preset]. */
 export const LESSONS = [
   ["crystal", "Conventional FCC cell", "basic"],
@@ -299,9 +647,17 @@ export const CONCEPT_TOPICS = {
   reciprocal: "reciprocal",
 };
 
-/** Teaching scenes. Applying one resets the overlays but keeps a, the element label and colors. */
+/**
+ * Teaching scenes. Applying one resets the overlays but keeps a, the element label, the colors
+ * and the selected structure. `title` may depend on the structure; `variants` adjust the patch
+ * for a structure (HCP planes use a₁, a₂, c); `structure` pins a scene to one structure;
+ * `structures` limits where a scene is offered.
+ */
+const COUNT_WORDS = { 6: "Six", 8: "Eight", 12: "Twelve" };
+const HCP_BASAL = { hkl: [0, 0, 1] };
+
 export const PRESETS = {
-  basic: { title: "Basic FCC cell", concept: "crystal", patch: {} },
+  basic: { title: (S) => `Basic ${S.short} cell`, concept: "crystal", patch: {} },
   counting: {
     title: "Count shared atoms",
     concept: "crystal",
@@ -311,6 +667,7 @@ export const PRESETS = {
     title: "Conventional vs primitive",
     concept: "primitive",
     patch: { primitive: true, opacity: 0.55, radius: 0.1 },
+    variants: { hcp: { hexPrism: false } },
   },
   directions: {
     title: "Directions & translation",
@@ -324,7 +681,7 @@ export const PRESETS = {
     },
   },
   planes: {
-    title: "The (111) plane",
+    title: (S) => (S.hexagonal ? "The (10−11) plane" : "The (111) plane"),
     concept: "planes",
     patch: {
       topic: "geometry",
@@ -335,9 +692,10 @@ export const PRESETS = {
       arrowOrigin: [0, 1, 0],
       radius: 0.1,
     },
+    variants: { hcp: { hkl: [1, 0, 1], arrowOrigin: [0, 0, 0] } },
   },
   surface001: {
-    title: "FCC (001)",
+    title: (S) => (S.hexagonal ? "HCP (0001)" : `${S.short} (001)`),
     concept: "surface",
     patch: {
       topic: "surface",
@@ -349,7 +707,7 @@ export const PRESETS = {
     },
   },
   surface110: {
-    title: "FCC (110)",
+    title: (S) => (S.hexagonal ? "HCP (10−10)" : `${S.short} (110)`),
     concept: "surface",
     patch: {
       topic: "surface",
@@ -359,9 +717,10 @@ export const PRESETS = {
       layer: 0,
       netRepeat: 3,
     },
+    variants: { hcp: { hkl: [1, 0, 0] } },
   },
   surface111: {
-    title: "FCC (111)",
+    title: (S) => (S.hexagonal ? "HCP (11−20)" : `${S.short} (111)`),
     concept: "surface",
     patch: {
       topic: "surface",
@@ -371,9 +730,11 @@ export const PRESETS = {
       layer: 0,
       netRepeat: 3,
     },
+    variants: { hcp: { hkl: [1, 1, 0] } },
   },
   packing: {
-    title: "Close-packed contacts",
+    title: (S) =>
+      ["fcc", "hcp"].includes(S.key) ? "Close-packed contacts" : `${S.short} touching contacts`,
     concept: "packing",
     patch: {
       topic: "surface",
@@ -384,14 +745,16 @@ export const PRESETS = {
       layer: 0,
       netRepeat: 2,
     },
+    variants: { sc: { hkl: [0, 0, 1] }, bcc: { hkl: [1, 1, 0] }, hcp: HCP_BASAL },
   },
   stacking: {
-    title: "FCC ABC stacking",
+    title: (S) => (S.hexagonal ? "HCP ABAB stacking" : "FCC ABC stacking"),
     concept: "stacking",
     patch: { topic: "stacking", workspace: "stacking", radius: 0.24 },
+    variants: { hcp: { stack: "hcp" } },
   },
   neighbors: {
-    title: "Twelve nearest neighbors",
+    title: (S) => `${COUNT_WORDS[S.coordination]} nearest neighbors`,
     concept: "neighbors",
     patch: {
       topic: "environment",
@@ -408,19 +771,21 @@ export const PRESETS = {
     patch: { topic: "environment", holes: "both", radius: 0.17, opacity: 0.24 },
   },
   slip: {
-    title: "FCC slip systems",
+    title: (S) => `${S.short} slip systems`,
     concept: "slip",
     patch: { topic: "slip", slip: true, radius: 0.11, opacity: 0.5 },
   },
   partials: {
-    title: "Shockley partial vectors",
+    title: (S) => (S.hexagonal ? "Basal partial vectors" : "Shockley partial vectors"),
     concept: "partials",
     patch: { topic: "slip", partials: true, radius: 0.07, opacity: 0.25 },
+    structures: ["fcc", "hcp"],
   },
   diffraction: {
-    title: "FCC diffraction",
+    title: (S) => `${S.short} diffraction`,
     concept: "reciprocal",
     patch: { topic: "reciprocal", workspace: "reciprocal", forbidden: true },
+    variants: { bcc: { reflection: [1, 1, 0] }, hcp: { reflection: [0, 0, 2] } },
   },
   animDeconstruct: {
     title: "Animate: 3D cell → 2D net",
@@ -433,6 +798,7 @@ export const PRESETS = {
       location: "layer",
       layer: 1,
     },
+    variants: { hcp: HCP_BASAL },
   },
   animBuild: {
     title: "Animate: 2D net → 3D cell",
@@ -445,6 +811,7 @@ export const PRESETS = {
       location: "layer",
       layer: 0,
     },
+    variants: { hcp: HCP_BASAL },
   },
   animPrimitive: {
     title: "Animate: primitive cells",
@@ -469,15 +836,16 @@ export const PRESETS = {
       location: "layer",
       layer: 1,
     },
+    variants: { hcp: HCP_BASAL },
   },
   animBcc: {
     title: "Animate: BCC (110) → primitive",
     concept: "cellnet",
+    structure: "bcc",
     patch: {
       topic: "surface",
       workspace: "animation",
       animMode: "netToPrim",
-      animStructure: "bcc",
       hkl: [1, 1, 0],
       location: "layer",
       layer: 1,
@@ -486,14 +854,18 @@ export const PRESETS = {
   animHcp: {
     title: "Animate: HCP ABAB stacking",
     concept: "cellnet",
+    structure: "hcp",
     patch: {
       topic: "surface",
       workspace: "animation",
       animMode: "build",
-      animStructure: "hcp",
       hkl: [0, 0, 1],
       location: "layer",
       layer: 0,
     },
   },
 };
+
+/** A preset's title for a structure. */
+export const presetTitle = (preset, S) =>
+  typeof preset.title === "function" ? preset.title(S) : preset.title;

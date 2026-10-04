@@ -10,6 +10,8 @@ import { LESSONS } from "./education/concepts.js";
 /** Default settings. `version` identifies the saved-view format. */
 export const DEFAULT_STATE = {
   version: 1,
+  structure: "fcc",
+  hexPrism: true,
   topic: "crystal",
   workspace: "crystal",
   tab: "learn",
@@ -104,12 +106,12 @@ export const DEFAULT_STATE = {
   pngScale: 2,
   lesson: -1,
   animMode: "deconstruct",
-  animStructure: "fcc",
   animSpeed: 1,
 };
 
 /** Allowed values of the enumerated settings. */
 export const CHOICES = {
+  structure: ["sc", "bcc", "fcc", "hcp"],
   topic: ["crystal", "geometry", "surface", "stacking", "environment", "slip", "reciprocal"],
   workspace: ["crystal", "surface", "animation", "stacking", "reciprocal"],
   tab: ["learn", "calculate", "verify", "layers"],
@@ -121,9 +123,8 @@ export const CHOICES = {
   location: ["canonical", "origin", "center", "translated", "layer"],
   planeSet: ["one", "symmetry", "parallel", "atomic"],
   stack: ["fcc", "hcp", "aaa", "intrinsic", "extrinsic", "twin"],
-  holes: ["none", "octa", "tetra", "both"],
+  holes: ["none", "octa", "tetra", "cubic", "both"],
   animMode: ["deconstruct", "build", "primitive", "primToNet", "netToPrim"],
-  animStructure: ["sc", "bcc", "fcc", "hcp"],
   animSpeed: [0.5, 1, 2],
 };
 
@@ -143,7 +144,7 @@ export const RANGES = {
   stackRepeat: [1, 6],
   separation: [1, 3],
   shell: [1, 3],
-  cutoff: [0.05, 1.5],
+  cutoff: [0.05, 2],
   slipIndex: [0, 11],
   extent: [1, 4],
   lambda: [0.001, 20],
@@ -161,6 +162,11 @@ export function validateState(input) {
   }
 
   const state = structuredClone(DEFAULT_STATE);
+
+  // Views saved while the structure was an animation-only setting.
+  if (input.structure === undefined && input.animStructure !== undefined) {
+    input = { ...input, structure: input.animStructure };
+  }
 
   for (const [key, value] of Object.entries(input)) {
     if (Object.hasOwn(DEFAULT_STATE, key)) {

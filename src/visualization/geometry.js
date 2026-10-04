@@ -3,7 +3,7 @@
  */
 
 import { BufferGeometry, Float32BufferAttribute, SphereGeometry } from "three";
-import { add, dot, orthonormalFrame, scale, subtract } from "../crystal/math.js";
+import { add, dot, norm, orthonormalFrame, scale, subtract } from "../crystal/math.js";
 
 /** A triangle fan for a convex planar polygon. */
 export function polygonGeometry(points) {
@@ -22,8 +22,29 @@ export function polygonGeometry(points) {
 /**
  * A unit sphere clipped by the cell faces in `mask` (−1, 0 or 1 per axis) and closed with
  * flat caps, so a boundary atom shows its half, quarter or eighth share of the cell.
+ * `normals` are the outward unit normals of the faces on each axis (the cube axes by default).
  */
-export function cappedSphereGeometry(segments, mask) {
+export function cappedSphereGeometry(segments, mask, normals = null) {
+  return clippedSphereGeometry(
+    segments,
+    [0, 1, 2]
+      .filter((axis) => mask[axis])
+      .map((axis) => {
+        if (normals) {
+          return scale(normals[axis], -mask[axis]);
+        }
+        const inward = [0, 0, 0];
+        inward[axis] = -mask[axis];
+        return inward;
+      }),
+  );
+}
+
+/**
+ * A unit sphere cut by planes through its center and closed with flat caps; `inward` lists
+ * the unit normals pointing into the kept part (into the cell).
+ */
+export function clippedSphereGeometry(segments, inward) {
   const sphere = new SphereGeometry(
     1,
     segments,
@@ -42,13 +63,7 @@ export function cappedSphereGeometry(segments, mask) {
 
   sphere.dispose();
 
-  for (let axis = 0; axis < 3; axis++) {
-    if (!mask[axis]) {
-      continue;
-    }
-
-    const inward = [0, 0, 0];
-    inward[axis] = -mask[axis];
+  for (const normal of inward) {
     const clipped = [];
     const capPoints = [];
 
@@ -58,8 +73,8 @@ export function cappedSphereGeometry(segments, mask) {
       for (let i = 0; i < 3; i++) {
         const p = triangle[i];
         const q = triangle[(i + 1) % 3];
-        const dp = dot(p, inward);
-        const dq = dot(q, inward);
+        const dp = dot(p, normal);
+        const dq = dot(q, normal);
         const pInside = dp >= -1e-8;
         const qInside = dq >= -1e-8;
 
@@ -86,7 +101,7 @@ export function cappedSphereGeometry(segments, mask) {
 
     if (cap.length > 2) {
       const centroid = scale(cap.reduce(add, [0, 0, 0]), 1 / cap.length);
-      const [u, v] = orthonormalFrame(scale(inward, -1));
+      const [u, v] = orthonormalFrame(scale(normal, -1));
       cap.sort(
         (first, second) =>
           Math.atan2(dot(subtract(first, centroid), v), dot(subtract(first, centroid), u)) -
@@ -101,8 +116,16 @@ export function cappedSphereGeometry(segments, mask) {
     triangles = clipped;
   }
 
+  // Smooth shading: radial normals on the sphere surface, the face normal on each flat cap.
+  // (Per-triangle normals made single facets flash white in the specular highlight.)
+  const normals = triangles.flatMap((triangle) => {
+    const plane = inward.find((normal) =>
+      triangle.every((point) => Math.abs(dot(point, normal)) < 1e-6),
+    );
+    return triangle.map((point) => (plane ? scale(plane, -1) : scale(point, 1 / norm(point))));
+  });
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(triangles.flat(2), 3));
-  geometry.computeVertexNormals();
+  geometry.setAttribute("normal", new Float32BufferAttribute(normals.flat(), 3));
   return geometry;
 }

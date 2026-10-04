@@ -1008,6 +1008,16 @@ tr.current {
 #player select {
   width: auto;
 }
+/* The structure is chosen in Crystal & unit cells; the player only shows it. */
+#player .structure-chip {
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: #e5f1eb;
+  color: #2f6c60;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
 #anim-step {
   flex: 1;
   min-width: 160px;
